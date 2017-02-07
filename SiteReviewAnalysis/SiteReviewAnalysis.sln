@@ -1,0 +1,27 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 14.00
+# Visual Studio 14
+VisualStudioVersion = 14.0.25420.1
+MinimumVisualStudioVersion = 10.0.25425.01
+Project("{F14B399A-7131-4C87-9E4B-1186C45EF12D}") = "SiteReviewAnalysis", "SiteReviewAnalysis\SiteReviewAnalysis.rptproj", "{5A9994EE-AF78-472B-A2C1-91FE242386EF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Default = Debug|Default
+		DebugLocal|Default = DebugLocal|Default
+		Release|Default = Release|Default
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{5A9994EE-AF78-472B-A2C1-91FE242386EF}.Debug|Default.ActiveCfg = Debug
+		{5A9994EE-AF78-472B-A2C1-91FE242386EF}.Debug|Default.Build.0 = Debug
+		{5A9994EE-AF78-472B-A2C1-91FE242386EF}.Debug|Default.Deploy.0 = Debug
+		{5A9994EE-AF78-472B-A2C1-91FE242386EF}.DebugLocal|Default.ActiveCfg = DebugLocal
+		{5A9994EE-AF78-472B-A2C1-91FE242386EF}.DebugLocal|Default.Build.0 = DebugLocal
+		{5A9994EE-AF78-472B-A2C1-91FE242386EF}.Release|Default.ActiveCfg = Release
+		{5A9994EE-AF78-472B-A2C1-91FE242386EF}.Release|Default.Build.0 = Release
+		{5A9994EE-AF78-472B-A2C1-91FE242386EF}.Release|Default.Deploy.0 = Release
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
