@@ -4,7 +4,7 @@
 -- Update date: 27/06/2016 @Pathe Parameter
 -- Description:	
 -- =============================================
-CREATE PROCEDURE Utility.[usp_Auto_AddReportsToRar]
+CREATE PROCEDURE [Utility].[usp_Auto_AddReportsToRar]
 AS
 BEGIN
 	SET NOCOUNT ON;
@@ -21,10 +21,16 @@ BEGIN
 	DECLARE @ExportReportName NVARCHAR(512);
 
     EXECUTE [Utility].[DirectoryCreate] @ExportPath;
-    
+	----
+	DECLARE @FullName NVARCHAR(MAX);
+	DECLARE @eMail NVARCHAR(MAX);
+
+
 	SET @getClientName = CURSOR LOCAL FAST_FORWARD FOR
-	SELECT	RMD.ClientName,CONCAT(@ExportPath,'\',ISNULL(RMD.ClientID,1),'\Mail'),ISNULL(RMD.ClientID,1),RMD.ReportGUID,RMD.ExportReportName
+	SELECT	RMD.ClientName,CONCAT(@ExportPath,'\',LC.eMail,'\Mail'),ISNULL(RMD.ClientID,1),RMD.ReportGUID,RMD.ExportReportName
 	FROM	Client.ReportMetaData RMD 
+			INNER JOIN [SiteReviewUser].[dbo].[Login] L ON ISNULL(RMD.ClientId,1) = L.ID
+			INNER JOIN [SiteReviewUser].[dbo].LoginCheck LC  ON LC.LoginID = L.ID
 	WHERE	RMD.IsExported = 1 
 			AND RMD.HaveExportError = 0
 			AND HaveSent = 0

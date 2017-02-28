@@ -63,17 +63,19 @@ BEGIN
 
 	IF LEN(@msg) > 0
 	BEGIN
-	SELECT Ok,
-		Channel,
-		TimeStamp,
-		Error
-	FROM [Utility].SlackChatPostMessage(
-		'xoxp-71992844615-71990538485-73144034609-9b77806502',
-		'#sitereview',
-		@msg,
-		'UpdateDataPlatform',
-		null
-	);
+		DECLARE @SlackToken NVARCHAR(MAX);
+		SELECT	@SlackToken = CONVERT(NVARCHAR(MAX),[Utility].[ufn_GetConfiguration] ('SlackToken'));
+		SELECT Ok,
+			Channel,
+			TimeStamp,
+			Error
+		FROM [Utility].SlackChatPostMessage(
+			@SlackToken,
+			'#sitereview',
+			@msg,
+			'UpdateDataPlatform',
+			null
+		);
 	END
 
 END

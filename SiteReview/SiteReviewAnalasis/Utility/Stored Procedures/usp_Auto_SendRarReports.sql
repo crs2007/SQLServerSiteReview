@@ -1,10 +1,11 @@
-﻿-- =============================================
+﻿
+-- =============================================
 -- Author:		Sharon
 -- Create date: 17/10/2016
 -- Update date: 
 -- Description:	Send Mail
 -- =============================================
-CREATE PROCEDURE Utility.[Auto_SendRarReports]
+CREATE PROCEDURE [Utility].[usp_Auto_SendRarReports]
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -13,8 +14,7 @@ BEGIN
     DECLARE @ClientName VARCHAR(255);
     DECLARE @ClientID INT;
 	DECLARE @ReportGUID UNIQUEIDENTIFIER;
-    DECLARE @emailadr VARCHAR(MAX) = '';
-	DECLARE @emaILCC VARCHAR(MAX) = '';
+	DECLARE @emailBCC VARCHAR(MAX) = '';
     DECLARE @file_attachment VARCHAR(1000);	
 
 	DECLARE @msg NVARCHAR(MAX);
@@ -24,40 +24,51 @@ BEGIN
     DECLARE @bodymsg VARCHAR(MAX);
     DECLARE @getClientName CURSOR;
     DECLARE @fileexistsresult INT;	
-	DECLARE @FullName NVARCHAR(200);
+
 	DECLARE @ExportPath NVARCHAR(MAX) = CONVERT(NVARCHAR(MAX),[Utility].[ufn_GetConfiguration] ('ExportPath'));
 	DECLARE @MailProfile sysname = (SELECT TOP 1 name FROM msdb.dbo.sysmail_profile);
-	SELECT	@emaILCC = 'sharonr@naya-tech.co.il';
+	DECLARE @eMail NVARCHAR(MAX);
+
+	DECLARE @SlackToken NVARCHAR(MAX);
+	SELECT	@SlackToken = CONVERT(NVARCHAR(MAX),[Utility].[ufn_GetConfiguration] ('SlackToken')),
+			@emailBCC = CONVERT(NVARCHAR(MAX),[Utility].[ufn_GetConfiguration] ('emailBCC'));
 
     SET @getClientName = CURSOR LOCAL FORWARD_ONLY FOR
-	SELECT [Utility].[ufn_CapitalizeFirstLetter](ISNULL(ClientName,N'General Client')),ISNULL(ClientID,1),ReportGUID FROM [Client].[ReportMetaData] WHERE HaveSent = 0 AND HaveExportError = 0;
+	SELECT	[Utility].[ufn_CapitalizeFirstLetter](ISNULL(L.FullName,N'General Client')),ISNULL(RMD.ClientID,1),RMD.ReportGUID ,LC.eMail
+	FROM	Client.ReportMetaData RMD 
+			INNER JOIN [SiteReviewUser].[dbo].[Login] L ON ISNULL(RMD.ClientId,1) = L.ID
+			INNER JOIN [SiteReviewUser].[dbo].LoginCheck LC  ON LC.LoginID = L.ID
+	WHERE	RMD.HaveSent = 0 
+			AND RMD.HaveExportError = 0;
 
     OPEN @getClientName;
-    FETCH NEXT FROM @getClientName INTO @ClientName,@ClientID,@ReportGUID;
+    FETCH NEXT FROM @getClientName INTO @ClientName,@ClientID,@ReportGUID,@eMail;
 	
     WHILE @@FETCH_STATUS = 0
         BEGIN
 
-			EXECUTE [Utility].[usp_GetClientList] @ClientID,@FullName OUTPUT,@emailadr OUTPUT;
 
-			IF @emailadr IS NULL OR @emailadr = ''
+			IF @eMail IS NULL OR @eMail = ''
 			BEGIN
-				SET @emailadr =@emaILCC
+				SET @eMail =@emailBCC
 			END
 			
-			SELECT @bodymsg = Utility.ufn_Auto_GenerateMailText(@FullName);
-			SELECT @ClientName = [Utility].[ufn_CapitalizeFirstLetter](CONCAT(@ClientName,' - ',@FullName));
+			SELECT @ClientName = [Utility].[ufn_CapitalizeFirstLetter](@ClientName);
+			SELECT @bodymsg = CONCAT('Dear ',@ClientName,',
 
-            SET @file_attachment = CONCAT(@ExportPath,'\',@ClientID,'\Mail\Reports.rar');
+Thank you for using SQL Server ');
+			
+
+            SET @file_attachment = CONCAT(@ExportPath,'\',@eMail,'\Mail\Reports.rar');
             EXEC master.dbo.xp_fileexist @file_attachment,
                 @fileexistsresult OUTPUT;
-            IF @fileexistsresult = 1 AND @emailadr IS NOT NULL
+            IF @fileexistsresult = 1 AND @eMail IS NOT NULL
             BEGIN
 				BEGIN TRY
 					EXEC msdb.dbo.sp_send_dbmail 
 						@profile_name = @MailProfile,
-						@recipients = @emailadr, 
-						@blind_copy_recipients = @emaILCC,
+						@recipients = @eMail, 
+						@blind_copy_recipients = @emailBCC,
 						@subject = @MainSubject,
 						@body = @bodymsg, 
 						@file_attachments = @file_attachment,
@@ -89,7 +100,7 @@ BEGIN
                 SET @errormsg = CASE WHEN @fileexistsresult = 0
                                         THEN @errormsg
                                             + '; Error: Missing file attachment'
-                                        WHEN @emailadr IS NULL
+                                        WHEN @eMail IS NULL
                                         THEN @errormsg
                                             + '; Error: Missing Email Recipients'
                                 END;
@@ -107,18 +118,16 @@ BEGIN
 				TimeStamp,
 				Error
 			FROM [Utility].SlackChatPostMessage(
-				'xoxp-71992844615-71990538485-73144034609-9b77806502',
+				@SlackToken,
 				'#sitereview',
 				@msg,
 				@ClientName,
-				null
+				NULL
 			)
-            FETCH NEXT FROM @getClientName INTO @ClientName,@ClientID,@ReportGUID;
+            FETCH NEXT FROM @getClientName INTO @ClientName,@ClientID,@ReportGUID,@eMail;
         END;
 
     CLOSE @getClientName;
     DEALLOCATE @getClientName;
 
 END
-
-

@@ -24,10 +24,13 @@ BEGIN
 			ELSE CONCAT(V.total_bytes - V.available_bytes ,'GB')
 			END FullStr,
 			CASE 
-			WHEN (CONVERT(NUMERIC(38,2),V.available_bytes) / CONVERT(NUMERIC(38,2),V.total_bytes) * 100) <= 30 THEN 'Drive have less then 30% free space'
-			WHEN (CONVERT(NUMERIC(38,2),V.available_bytes) / CONVERT(NUMERIC(38,2),V.total_bytes) * 100) <= 20 THEN 'Drive have less then 20% free space'
-			WHEN (CONVERT(NUMERIC(38,2),V.available_bytes) / CONVERT(NUMERIC(38,2),V.total_bytes) * 100) <= 10 THEN 'Drive have less then 10% free space'
-			ELSE NULL END
+			WHEN (CONVERT(NUMERIC(38,2),V.available_bytes) / CONVERT(NUMERIC(38,2),V.total_bytes) * 100) <= 30 THEN 'Drive have less then 30% free space.' + IIF(V.[BlockSize]/1024 = 64,'','
+Change Block size to 64K')
+			WHEN (CONVERT(NUMERIC(38,2),V.available_bytes) / CONVERT(NUMERIC(38,2),V.total_bytes) * 100) <= 20 THEN 'Drive have less then 20% free space.' + IIF(V.[BlockSize]/1024 = 64,'','
+Change Block size to 64K')
+			WHEN (CONVERT(NUMERIC(38,2),V.available_bytes) / CONVERT(NUMERIC(38,2),V.total_bytes) * 100) <= 10 THEN 'Drive have less then 10% free space.' + IIF(V.[BlockSize]/1024 = 64,'','
+Change Block size to 64K')
+			ELSE  + IIF(V.[BlockSize]/1024 = 64,NULL,'Change Block size to 64K') END
 			[Note]
 	INTO	#Volume
 	FROM	Client.Volumes V
