@@ -487,10 +487,6 @@
       <AnsiNulls>On</AnsiNulls>
       <QuotedIdentifier>On</QuotedIdentifier>
     </Build>
-    <Build Include="Utility\Stored Procedures\Auto_SendRarReports.sql">
-      <AnsiNulls>On</AnsiNulls>
-      <QuotedIdentifier>On</QuotedIdentifier>
-    </Build>
     <Build Include="Utility\Stored Procedures\usp_Auto_AddReportsToRar.sql">
       <AnsiNulls>On</AnsiNulls>
       <QuotedIdentifier>On</QuotedIdentifier>
@@ -565,6 +561,10 @@
     <Build Include="Security\GUI.sql" />
     <Build Include="Security\Run.sql" />
     <Build Include="Security\Utility.sql" />
+    <Build Include="Utility\Stored Procedures\usp_Auto_SendRarReports.sql">
+      <AnsiNulls>On</AnsiNulls>
+      <QuotedIdentifier>On</QuotedIdentifier>
+    </Build>
   </ItemGroup>
   <ItemGroup>
     <None Include="Assemblies\FileSystemHelper.dll" />

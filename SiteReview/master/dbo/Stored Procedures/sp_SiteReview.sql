@@ -1,4 +1,4 @@
-﻿ /*
+﻿/*
  =============================================
  Author:			Sharon Rimer
  M@il:				sharonr@naya-tech.co.il
@@ -26,7 +26,7 @@ LICENSE:
 	debug collect
 	Try Catch
  ============================================================================*/
-CREATE PROCEDURE [dbo].[sp_SiteReview] ( @Client NVARCHAR(255) = N'General Client',@Allow_Weak_Password_Check BIT = 0,@debug BIT = 0,@Display BIT = 0,@Mask BIT = 1,@Help BIT = 0)
+ALTER PROCEDURE [dbo].[sp_SiteReview] ( @Client NVARCHAR(255) = N'General Client',@Allow_Weak_Password_Check BIT = 0,@debug BIT = 0,@Display BIT = 0,@Mask BIT = 1,@Help BIT = 0)
 AS
 BEGIN
 	SET NOCOUNT ON;
@@ -40,7 +40,7 @@ BEGIN
 	DECLARE @ClientVersion NVARCHAR(15);
 	DECLARE @ThankYou NVARCHAR(4000);
 	DECLARE @Print NVARCHAR(4000);
-	SET @ClientVersion = '1.493';
+	SET @ClientVersion = '1.498';
 	SET @ThankYou = 'Thank you for using this our SQL Server Site Review.
 --------------------------------------------------------------------------------
 
@@ -76,39 +76,39 @@ Input Parameters:
 	DECLARE @LogPath VARCHAR(2000);
 	SELECT @LogPath = CONVERT(VARCHAR(2000),SERVERPROPERTY('ErrorLogFileName'))
 
-	SELECT @LogPath = SUBSTRING (@LogPath,charindex('''',@LogPath)+1, len(@LogPath)+1 - charindex('''',@LogPath)-charindex('\',reverse(@LogPath)))
+	SELECT @LogPath = SUBSTRING (@LogPath,CHARINDEX('''',@LogPath)+1, LEN(@LogPath)+1 - CHARINDEX('''',@LogPath)-CHARINDEX('\',REVERSE(@LogPath)))
 
     DECLARE @showadvanced INT ,
-			@cmdshell INT;
+			@cmdshell INT, 
+			@olea INT;
 	DECLARE @PS VARCHAR(4000);
 	DECLARE @Command VARCHAR(4000);
 	DECLARE @Filename VARCHAR(1000);
-	DECLARE @FilePath VARCHAR(1000);
+	DECLARE @FilePath VARCHAR(1000);	
+	DECLARE @cmd NVARCHAR(MAX);
 
     SELECT  @showadvanced = 0 ,
-            @cmdshell = 0;
+            @cmdshell = 0,
+			@olea = 0;
     IF EXISTS ( SELECT TOP 1 1 FROM sys.configurations C WHERE C.name = 'show advanced options' AND C.value = 0 )
     BEGIN
 		IF @debug = 1 RAISERROR ('Turn on "show advanced options"',0,1) WITH NOWAIT;
         EXEC sp_configure 'show advanced options', 1;
         RECONFIGURE WITH OVERRIDE;
+		SET @showadvanced = 1;
     END;
-    ELSE
-    BEGIN
-        SET @showadvanced = 1;
-    END;
+
 
     IF EXISTS ( SELECT TOP 1 1 FROM sys.configurations C WHERE   C.name = 'xp_cmdshell' AND C.value = 0 )
     BEGIN
 		IF @debug = 1 RAISERROR ('Turn on "xp_cmdshell"',0,1) WITH NOWAIT;
         EXEC sp_configure 'xp_cmdshell', 1;
         RECONFIGURE WITH OVERRIDE;
+		SET @cmdshell = 1;
 	
     END;
     ELSE
-    BEGIN
-        SET @cmdshell = 1;
-    END;
+
     BEGIN TRY
         DECLARE @MajorVersion INT;
         IF OBJECT_ID('tempdb..#checkversion') IS NOT NULL DROP TABLE #checkversion;
@@ -481,7 +481,7 @@ OPTION(RECOMPILE);', N'@PhysicalMemory INT OUTPUT,
                 deadlock_monitor_serial_number ,
                 sqlserver_start_time ,
                 affinity_type ,
-                virtual_machine_type ,
+                --virtual_machine_type , ONLY > 2008R2
                 CASE WHEN @@Version LIKE '%64-bit%' THEN 64
                         ELSE 32
                 END OS_bit ,
@@ -972,7 +972,7 @@ BEGIN TRY
 		DELETE FROM #xp_cmdshell_output;
         INSERT  #SR_MachineSettings
         SELECT  CASE WHEN @Mask = 1 THEN CONVERT(NVARCHAR(200),'SQLServerMask')
-				ELSE ISNULL(CONVERT(NVARCHAR(200), @@ServerName),
+				ELSE ISNULL(CONVERT(NVARCHAR(200), @@SERVERNAME),
                         CONVERT(NVARCHAR(200), SERVERPROPERTY('MachineName'))) 
 				END ServerName ,
                 CASE WHEN @Mask = 1 THEN CONVERT(NVARCHAR(200),'MachineNameMask')
@@ -1013,18 +1013,30 @@ BEGIN TRY
 -----------------------------------------------------------------------------------------------------------
 	BEGIN TRY
 		SET @DebugStartTime = GETDATE();
-	IF @debug = 1 RAISERROR ('Collect Server Services',0,1) WITH NOWAIT;
-        IF OBJECT_ID('tempdb..#SR_server_services') IS NOT NULL
-            DROP TABLE #SR_server_services;
-        SELECT  servicename ,
-                startup_type_desc ,
-                startup_type ,
-                status ,
-                status_desc ,
-                CASE WHEN @Mask = 1 THEN REPLACE(service_account,@SQLAGTACC,'ADLoginNameMask') ELSE service_account END [service_account]
-        INTO    #SR_server_services
-        FROM    sys.dm_server_services
-		OPTION  ( RECOMPILE );
+		IF @debug = 1 RAISERROR ('Collect Server Services',0,1) WITH NOWAIT;
+        IF OBJECT_ID('tempdb..#SR_server_services') IS NULL
+            CREATE TABLE #SR_server_services(
+				[servicename] [nvarchar](256)  NULL,
+				[startup_type_desc] [nvarchar](256)  NULL,
+				[startup_type] [int] NULL,
+				[status] [int] NULL,
+				[status_desc] [nvarchar](256)  NULL,
+				[service_account] [nvarchar](256)  NULL);
+		IF SERVERPROPERTY('productversion') > '10.50.2500.0'
+		BEGIN
+/*sys.dm_server_services - Returns information about the operating system volume (directory) on which the specified databases and files are stored. Use this dynamic management function in SQL Server 2008 R2 SP1 and later versions to check the attributes of the physical disk drive or return available free space information about the directory. 	*/
+			SELECT @cmd = 'INSERT #SR_server_services
+SELECT  servicename ,
+		startup_type_desc ,
+		startup_type ,
+		status ,
+		status_desc ,' + CASE WHEN @Mask = 1 THEN 'REPLACE(service_account,''' + @SQLAGTACC + ''',''ADLoginNameMask'')' ELSE 'service_account' END + ' [service_account]
+FROM    sys.dm_server_services
+OPTION  ( RECOMPILE );';
+
+			EXEC(@cmd);
+		END
+        
 		INSERT @DebugError VALUES  ('Server Services',NULL,DATEDIFF(SECOND,@DebugStartTime,GETDATE()));
 	END TRY
 	BEGIN CATCH
@@ -1082,16 +1094,15 @@ BEGIN TRY
   
   WHILE @@FETCH_STATUS = 0
   BEGIN
---Build Sql Server's full service name
+		--Build Sql Server's full service name
         SET @SQLServiceNamei = CASE WHEN @InstanceNames = 'MSSQLSERVER'
                                     THEN 'MSSQLSERVER'
                                     ELSE 'MSSQL$' + @InstanceNames
                                 END; 
 
         SET @keyi = 'SYSTEM\CurrentControlSet\Services\' + @SQLServiceNamei;
-
-             DELETE FROM @reg  
---MSSQLSERVER Service Account
+		DELETE FROM @reg  
+		--MSSQLSERVER Service Account
         INSERT @reg EXEC master..xp_regread 'HKEY_LOCAL_MACHINE', @keyi, 'ObjectName';
         UPDATE  @reg
         SET     keyname = @SQLServiceNamei
@@ -1101,7 +1112,7 @@ BEGIN TRY
 
              -------------------------------------------------------------------------------	
 
-		 SET @PS = 'powershell.exe "Get-Service | Where-Object {$_.DisplayName -like ''SQL Server (*'' -and $_.Name -eq ''' + @SQLServiceNamei + '''}"';
+		SET @PS = 'powershell.exe -noprofile -command "Get-Service | Where-Object {$_.DisplayName -like ''SQL Server (*'' -and $_.Name -eq ''' + @SQLServiceNamei + '''}"';
 
 		DELETE FROM @output;
         INSERT @output EXEC xp_cmdshell @PS;
@@ -1494,7 +1505,7 @@ BEGIN TRY
 			   CASE WHEN j.description LIKE '%report server%' THEN 'Report Server, ' ELSE '' END + ISNULL('Alert - ' + Al.name + ', ','') + ISNULL('Schedule - ' + SCH.name,'') [Caller]
 		FROM	msdb.dbo.sysjobs j
 				INNER JOIN msdb.dbo.sysjobsteps js ON j.job_id = js.job_id
-				CROSS APPLY(SELECT TOP 1 CASE WHEN patINDEX('%"Maintenance Plans\%',js.command) > 0 THEN 'Maintenance Plans(SSIS)' ELSE
+				CROSS APPLY(SELECT TOP 1 CASE WHEN PATINDEX('%"Maintenance Plans\%',js.command) > 0 THEN 'Maintenance Plans(SSIS)' ELSE
 				CASE js.subsystem
 			WHEN 'ActiveScripting' THEN 'ActiveX Script'
 			WHEN 'CmdExec' THEN 'Operating system (CmdExec)'
@@ -1511,14 +1522,15 @@ BEGIN TRY
 			ELSE js.subsystem END
 		  END AS [SubSystem]) JSS
 				LEFT JOIN (SELECT DISTINCT Ij.name,
-						ISNULL(IIF(OA.Lag_on_success_step_id= 0,Ijs.step_id,OA.Lag_on_success_step_id),Ijs.step_id) StepID
+						ISNULL(CASE WHEN OA.Lag_on_success_step_id = 0 THEN Ijs.step_id ELSE OA.Lag_on_success_step_id END,Ijs.step_id) StepID
 				FROM	msdb.dbo.sysjobs Ij
 				inner join msdb.dbo.sysjobsteps Ijs 
 						on Ij.job_id = Ijs.job_id
 				Outer Apply (
-					Select Top 1 on_success_step_id Lag_on_success_step_id
-					From	msdb.dbo.sysjobsteps Ijs2
-					Where	Ijs2.step_id<Ijs.step_id Order By Ijs2.step_id) OA) ST 
+					SELECT TOP 1 on_success_step_id Lag_on_success_step_id
+					FROM	msdb.dbo.sysjobsteps Ijs2
+					WHERE	Ijs2.step_id < Ijs.step_id 
+					ORDER BY Ijs2.step_id) OA) ST 
 				ON ST.StepID = js.step_id and ST.name = j.name
 				CROSS APPLY (SELECT TOP 1 msdb.dbo.agent_datetime(
 								   case when js.last_run_date = 0 then NULL else js.last_run_date end,
@@ -1568,7 +1580,7 @@ BEGIN TRY
 				OUTER APPLY (SELECT	TOP 1 ja.run_requested_date FROM msdb.dbo.sysjobactivity ja WHERE j.job_id = ja.job_id ORDER BY ja.run_requested_date desc)JxA
 				OUTER APPLY( SELECT  TOP 1 message
 							   FROM    SSISDB.catalog.event_messages em
-							   WHERE   em.package_name COLLATE DATABASE_DEFAULT = RIGHT( SUBSTRING(js.command,0,patINDEX('%.dtsx%',js.command)), CHARINDEX( '\', REVERSE( SUBSTRING(js.command,0,patINDEX('%.dtsx%',js.command))) + '\' ) - 1 ) +N'.dtsx'
+							   WHERE   em.package_name COLLATE DATABASE_DEFAULT = RIGHT( SUBSTRING(js.command,0,PATINDEX('%.dtsx%',js.command)), CHARINDEX( '\', REVERSE( SUBSTRING(js.command,0,PATINDEX('%.dtsx%',js.command))) + '\' ) - 1 ) +N'.dtsx'
 										AND event_name = 'OnError'
 						ORDER BY event_message_id DESC
 				)SS
@@ -1601,7 +1613,7 @@ BEGIN TRY
 		FROM	msdb.dbo.sysjobs j
 		INNER JOIN msdb.dbo.sysjobsteps js 
 				ON j.job_id = js.job_id
-		CROSS APPLY(SELECT TOP 1 CASE WHEN patINDEX('%"Maintenance Plans\%',js.command) > 0 THEN 'Maintenance Plans(SSIS)' ELSE
+		CROSS APPLY(SELECT TOP 1 CASE WHEN PATINDEX('%"Maintenance Plans\%',js.command) > 0 THEN 'Maintenance Plans(SSIS)' ELSE
 												CASE js.subsystem    WHEN 'ActiveScripting' THEN 'ActiveX Script'
 													WHEN 'CmdExec' THEN 'Operating system (CmdExec)'
 													WHEN 'PowerShell' THEN 'PowerShell'
@@ -1617,7 +1629,7 @@ BEGIN TRY
 													ELSE js.subsystem END
 								END AS [SubSystem]) JSS
 		LEFT JOIN (SELECT DISTINCT Ij.name,
-						ISNULL(IIF(OA.Lag_on_success_step_id= 0,Ijs.step_id,OA.Lag_on_success_step_id),Ijs.step_id) StepID
+						ISNULL(CASE WHEN OA.Lag_on_success_step_id = 0 THEN Ijs.step_id ELSE OA.Lag_on_success_step_id END,Ijs.step_id) StepID
 				FROM	msdb.dbo.sysjobs Ij
 				inner join msdb.dbo.sysjobsteps Ijs 
 						on Ij.job_id = Ijs.job_id
@@ -1800,7 +1812,7 @@ BEGIN TRY
 	BEGIN TRY
 		SET @DebugStartTime = GETDATE();
 
-        SET @PS = 'powershell.exe "get-wmiobject win32_diskpartition | select name, startingoffset | foreach{$_.name+''|''+$_.startingoffset/1024+''*''}"';
+        SET @PS = 'powershell.exe -noprofile -command "get-wmiobject win32_diskpartition | select name, startingoffset | foreach{$_.name+''|''+$_.startingoffset/1024+''*''}"';
 ----------------------------------------------
         BEGIN TRY
 			DELETE FROM @output;
@@ -1900,17 +1912,127 @@ BEGIN TRY
 		SET @DebugStartTime = GETDATE();
         IF OBJECT_ID('tempdb..#SR_Volume') IS NOT NULL
             DROP TABLE #SR_Volume;
-        SELECT  DISTINCT
-                vs.volume_mount_point ,
-                CAST(vs.available_bytes AS FLOAT) available_bytes ,
-                CAST(vs.total_bytes AS FLOAT) total_bytes ,
-                BS.*,
+		IF OBJECT_ID('tempdb..#VolumDiskInfo') IS NULL
+		CREATE TABLE #VolumDiskInfo
+		(
+		  volume_mount_point CHAR(3) ,
+		  [available_bytes] BIGINT ,
+		  [total_bytes] BIGINT)
+
+		IF SERVERPROPERTY('productversion') > '10.50.2500.0'
+		BEGIN
+			INSERT #VolumDiskInfo
+			SELECT  vs.volume_mount_point ,
+					MIN(CAST(vs.available_bytes AS FLOAT)) available_bytes ,
+					MAX(CAST(vs.total_bytes AS FLOAT)) total_bytes
+			FROM    sys.master_files AS f 
+					CROSS APPLY sys.dm_os_volume_stats(f.database_id, f.file_id) AS vs
+			GROUP BY vs.volume_mount_point;
+		END
+		ELSE
+		BEGIN
+/*https://msdn.microsoft.com/en-us/library/hh223223(v=sql.105).aspx
+sys.dm_os_volume_stats - Returns information about the operating system volume (directory) on which the specified databases and files are stored. Use this dynamic management function in SQL Server 2008 R2 SP1 and later versions to check the attributes of the physical disk drive or return available free space information about the directory. 	*/
+			IF EXISTS( SELECT TOP 1 1 FROM sys.configurations WHERE [name] LIKE 'Ole Automation Procedures' AND value_in_use = 0 ) 
+			BEGIN
+				EXEC sp_configure 'Ole Automation Procedures', 1;
+				RECONFIGURE;
+				SET @olea = 1;
+			END;
+
+			IF OBJECT_ID('tempdb..#_DriveSpace') IS NOT NULL
+				DROP TABLE #_DriveSpace;
+
+			IF OBJECT_ID('tempdb..#_DriveInfo') IS NOT NULL
+				DROP TABLE #_DriveInfo;
+
+			DECLARE @Result INT ,
+				@objFSO INT ,
+				@Drv INT ,
+				@cDrive VARCHAR(13) ,
+				@Size VARCHAR(50) ,
+				@Free VARCHAR(50) ,
+				@Label VARCHAR(10);
+
+			CREATE TABLE #_DriveSpace (
+				  driveletter CHAR(1) NOT NULL ,
+				  FreeSpace VARCHAR(10) NOT NULL);
+
+			CREATE TABLE #_DriveInfo(
+				  driveletter CHAR(1) ,
+				  TotalSpace BIGINT ,
+				  FreeSpace BIGINT ,
+				  Label VARCHAR(10));
+
+			INSERT #_DriveSpace EXEC master.dbo.xp_fixeddrives;
+
+			-- Iterate through drive letters.
+			DECLARE curdriveletters CURSOR LOCAL FAST_FORWARD
+			FOR
+				SELECT  driveletter
+				FROM    #_DriveSpace;
+
+			DECLARE @driveletter CHAR(1);
+			OPEN curdriveletters;
+
+			FETCH NEXT FROM curdriveletters INTO @driveletter;
+			WHILE ( @@fetch_status <> -1 )
+				BEGIN
+					IF ( @@fetch_status <> -2 )
+						BEGIN
+
+							SET @cDrive = 'GetDrive("' + @driveletter + '")'; 
+
+							EXEC @Result = sp_OACreate 'Scripting.FileSystemObject', @objFSO OUTPUT; 
+
+							IF @Result = 0 EXEC @Result = sp_OAMethod @objFSO, @cDrive, @Drv OUTPUT; 
+
+							IF @Result = 0 EXEC @Result = sp_OAGetProperty @Drv, 'TotalSize', @Size OUTPUT; 
+
+							IF @Result = 0 EXEC @Result = sp_OAGetProperty @Drv, 'FreeSpace', @Free OUTPUT; 
+
+							IF @Result = 0 EXEC @Result = sp_OAGetProperty @Drv, 'VolumeName', @Label OUTPUT; 
+
+							IF @Result <> 0 EXEC sp_OADestroy @Drv; 
+							EXEC sp_OADestroy @objFSO; 
+
+							INSERT  INTO #_DriveInfo
+							VALUES  ( @driveletter, @Size, @Free, @Label );
+
+						END;
+					FETCH NEXT FROM curdriveletters INTO @driveletter;
+				END;
+
+			CLOSE curdriveletters;
+			DEALLOCATE curdriveletters;
+
+			INSERT	#VolumDiskInfo
+			SELECT  driveletter + ':\' AS volume_mount_point ,
+					FreeSpace AS [available_bytes],
+					TotalSpace AS [total_bytes] 
+			FROM    #_DriveInfo
+			ORDER BY [driveletter] ASC;	
+
+			DROP TABLE #_DriveSpace;
+			DROP TABLE #_DriveInfo;
+		END
+
+
+        SELECT  vs.volume_mount_point ,
+				MIN(CAST(vs.available_bytes AS FLOAT)) available_bytes ,
+				MAX(CAST(vs.total_bytes AS FLOAT)) total_bytes,
+                BS.DriveLeter ,
+                BS.BlockSize,
 				VN.VolumeName
         INTO    #SR_Volume
-        FROM    sys.master_files AS f WITH ( NOLOCK )
-                CROSS APPLY sys.dm_os_volume_stats(f.database_id, f.file_id) AS vs
+        FROM    (SELECT	DISTINCT LEFT(physical_name,3)physical_name
+                FROM	sys.master_files) AS f
+                CROSS APPLY (SELECT TOP 1 * FROM #VolumDiskInfo VDI WHERE f.physical_name = VDI.volume_mount_point) AS vs
                 LEFT JOIN #SR_BlockSize BS ON BS.DriveLeter = vs.volume_mount_point
 				LEFT JOIN #VolumeName VN ON VN.Drive = vs.volume_mount_point
+		GROUP BY vs.volume_mount_point,BS.DriveLeter ,
+                BS.BlockSize,
+				VN.VolumeName
 		OPTION(RECOMPILE);
         DROP TABLE #SR_BlockSize;
         DROP TABLE #DriveLeter;
@@ -2081,8 +2203,7 @@ IF OBJECT_ID('tempdb..#temp') IS NOT NULL
     WHILE @@FETCH_STATUS = 0
         BEGIN
             SET @SQLcmd = 'Use [' + @DBName + '];' + CHAR(10) + CHAR(13);
-            SET @SQLcmd = @SQLcmd + 'DBCC Page ( [' + @DBName
-                + '],1,9,3) WITH TABLERESULTS,NO_INFOMSGS;' + CHAR(10) + CHAR(13);
+            SET @SQLcmd = @SQLcmd + 'DBCC Page ( [' + @DBName + '],1,9,3) WITH TABLERESULTS,NO_INFOMSGS;' + CHAR(10) + CHAR(13);
  
             INSERT  INTO #temp EXECUTE ( @SQLcmd);
             SET @SQLcmd = '';
@@ -2118,7 +2239,6 @@ IF OBJECT_ID('tempdb..#temp') IS NOT NULL
 	LastBackUpTime DATETIME NOT NULL,
 	[Type] CHAR(1) NULL);
 
-	DECLARE @cmd NVARCHAR(MAX);
 	
 	SELECT @cmd = N'
 INSERT	#WitchDBtoCheck
@@ -2242,6 +2362,22 @@ where	db.state = 0
 		and db.is_read_only = 0
 		AND is_auto_update_stats_on = 1
 		AND db.name IN(SELECT DatabaseName FROM	@DB_Exclude)
+UNION ALL 
+SELECT 'User objects in system DB' [Type],'master' name,N'system DB have ' + CONVERT(VARCHAR(25),COUNT_BIG(1)) + ' "' + CASE type 
+              WHEN 'P' THEN 'user stored procedures' 
+              WHEN 'U' THEN 'user tables' 
+              WHEN 'V' THEN 'views' 
+              WHEN 'TF' THEN 'user table valued function' 
+              WHEN 'FN' THEN 'user define function' 
+              WHEN 'TT' THEN 'user table type' 
+              ELSE type_desc COLLATE DATABASE_DEFAULT END + '".
+Clean user objects from master.'AS [Note],CONVERT(NVARCHAR(MAX),NULL)[Link]
+FROM   [master].sys.objects o
+WHERE  type NOT IN ('s','pk','d','f','SQ','UQ','it')
+              AND is_ms_shipped <> 1
+              AND o.name NOT IN ('sp_Blitz','sp_WhoIsActive','sp_dba_ForEachDB','sp_BlitzFirst','')
+GROUP BY type_desc,type
+HAVING  COUNT_BIG(1)  > 10
 ORDER BY 2,1
 OPTION(RECOMPILE);
 
@@ -2259,9 +2395,9 @@ OPTION(RECOMPILE);
             );
 
         SET @cmd = ( SELECT 'union all 
-		select top 1 ''' + D.name + ''' as DatabaseName
-		from ' + QUOTENAME(D.name) + '.sys.tables as t
-		where t.is_memory_optimized=1
+		SELECT TOP 1 ''' + D.name + ''' as DatabaseName
+		FROM ' + QUOTENAME(D.name) + '.sys.tables as t
+		WHERE t.is_memory_optimized=1
 		'
                         FROM   sys.databases AS D
 						WHERE	D.state = 0
@@ -2665,7 +2801,7 @@ BEGIN
                     INNER JOIN master.sys.availability_replicas ar ON rs.replica_id = ar.replica_id
                     INNER JOIN sys.dm_hadr_database_replica_cluster_states dcs ON dcs.group_database_id = rs.group_database_id
                                                             AND rs.replica_id = dcs.replica_id
-            WHERE    replica_server_name <> @@servername
+            WHERE    replica_server_name <> @@SERVERNAME
             )
 INSERT	#SR_AlwaysOnLatency
 SELECT  AG.name [AlwaysOnGroup],
@@ -2681,7 +2817,7 @@ FROM    master.sys.dm_hadr_database_replica_states rs
                                                             AND rs.replica_id = dcs.replica_id
         INNER JOIN DR_CTE ON DR_CTE.database_name = dcs.database_name
         JOIN master.sys.availability_groups AG ON ar.group_id = AG.group_id
-WHERE   ar.replica_server_name = @@servername
+WHERE   ar.replica_server_name = @@SERVERNAME
 OPTION(RECOMPILE);
 	')
 END
@@ -2811,265 +2947,416 @@ IF @debug = 1 RAISERROR ('Collect Maintplan Plans Logs',0,1) WITH NOWAIT;
 	IF OBJECT_ID('tempdb..#MPLoutput') IS NOT NULL DROP TABLE #MPLoutput 
 --------------------------------------------------------------------------------------------------------
 --------------------------------------------------------------------------------------------------------
-
---############################################################################################################### 
---                                    CHECK DISTRIBUTION Queues 
---############################################################################################################### 
 IF OBJECT_ID('tempdb..#SR_Replication', 'u') IS NOT NULL DROP TABLE #SR_Replication;
 CREATE TABLE #SR_Replication(ID INT NOT NULL,[Messages] NVARCHAR(MAX) NOT NULL,[Type] NVARCHAR(MAX) NOT NULL,[Link] NVARCHAR(MAX) NULL);
-IF DB_ID('distribution') IS NOT NULL
+DECLARE @DistributorName sysname
+IF EXISTS(SELECT TOP 1 1 FROM sys.databases WHERE state = 0 AND is_distributor = 1)
 BEGIN
-IF OBJECT_ID('tempdb..#MSdistribution_status', 'u') IS NOT NULL DROP TABLE #MSdistribution_status;
-IF OBJECT_ID('tempdb..#MSdistribution_agents', 'u') IS NOT NULL DROP TABLE #MSdistribution_agents;
-IF OBJECT_ID('tempdb..#MSpublications', 'u') IS NOT NULL DROP TABLE #MSpublications;
-IF OBJECT_ID('tempdb..#MSarticles', 'u') IS NOT NULL DROP TABLE #MSarticles;
+	IF OBJECT_ID('tempdb..#MSdistribution_status', 'u') IS NOT NULL DROP TABLE #MSdistribution_status;
+	IF OBJECT_ID('tempdb..#MSdistribution_agents', 'u') IS NOT NULL DROP TABLE #MSdistribution_agents;
+	IF OBJECT_ID('tempdb..#MSpublications', 'u') IS NOT NULL DROP TABLE #MSpublications;
+	IF OBJECT_ID('tempdb..#MSarticles', 'u') IS NOT NULL DROP TABLE #MSarticles;
 
+	CREATE TABLE #MSdistribution_status(
+		article_id	int	NULL,
+		agent_id	int		NULL,
+		UndelivCmdsInDistDB	int		NULL,
+		DelivCmdsInDistDB	int	NULL);
+	
+	CREATE TABLE #MSdistribution_agents(
+		[name]	NVARCHAR(100)	NULL,
+		subscriber_id	int		NULL,
+		id	int		NULL,
+		publication	sysname	NULL,
+		subscriber_db sysname NULL);
 
-SELECT  UndelivCmdsInDistDB,agent_id,DelivCmdsInDistDB,article_id
-INTO    #MSdistribution_status
-FROM    [distribution]..MSdistribution_status
-WHERE	UndelivCmdsInDistDB > 2000; -- GIVE A NUMBER HERE TO DEFINE A LARGE NUMBER OF RECORDS WAITING FOR REPLICATION;
-SELECT  name,subscriber_id,id,publication,subscriber_db
-INTO    #MSdistribution_agents
-FROM    [distribution]..MSdistribution_agents;
-SELECT  publication_id,publication
-INTO    #MSpublications
-FROM    [distribution]..MSpublications;
-SELECT  *
-INTO    #MSarticles
-FROM    [distribution]..MSarticles;
+	CREATE TABLE #MSpublications(
+		publication_id	int	NULL,
+		publication	sysname	NULL,
+		immediate_sync BIT NULL,
+		publisher_id	smallint	NULL,
+		publisher_db	sysname NULL
+		);
 
-INSERT #SR_Replication
-SELECT	3 [ID],
-		'Article - ' + a.article COLLATE DATABASE_DEFAULT + '(' + agents.subscriber_db COLLATE DATABASE_DEFAULT + ') on publication ' + p.publication COLLATE DATABASE_DEFAULT + ' have ' + CONVERT(VARCHAR(1000),s.UndelivCmdsInDistDB) + ' undelivered Commands In distributionDB. on ' + CONVERT(VARCHAR(5),COUNT(1))+ ' agent(s).',
-		'Undelivered Commands In distribution' [Type],
-		CASE WHEN agents.subscriber_db = 'virtual' THEN 'https://blogs.msdn.microsoft.com/mangeshd/2009/01/27/virtual-subscription-entries-in-the-distribution-mssubscriptions-table'
-		ELSE NULL END
-FROM    #MSdistribution_status AS s
-        INNER JOIN #MSdistribution_agents AS agents ON agents.[id] = s.agent_id
-        INNER JOIN #MSpublications AS p ON p.publication = agents.publication
-        INNER JOIN #MSarticles AS a ON a.article_id = s.article_id
-                                                       AND p.publication_id = a.publication_id
-        LEFT JOIN sys.servers SR ON agents.subscriber_id = SR.server_id
---WHERE   agents.subscriber_db <> 'virtual' -- https://blogs.msdn.microsoft.com/mangeshd/2009/01/27/virtual-subscription-entries-in-the-distribution-mssubscriptions-table/
-GROUP BY a.article,agents.subscriber_db,p.publication,s.UndelivCmdsInDistDB
-OPTION(RECOMPILE);
+	CREATE TABLE #MSarticles(
+		publisher_id	smallint	NULL,
+		publisher_db	sysname	NULL,
+		publication_id	int	NULL, 
+		article	sysname	NULL,
+		article_id	int	NULL,
+		destination_object	sysname NULL,
+		source_owner	sysname	NULL,
+		source_object	sysname	NULL,
+		description	nvarchar(255)	NULL,
+		destination_owner	sysname NULL
+		);
+	IF OBJECT_ID('tempdb..#agent_parameter', 'u') IS NOT NULL DROP TABLE #agent_parameter;
+	CREATE TABLE #agent_parameter (
+	agent_type	INT,
+	parameter_name sysname,
+	value nvarchar(255)
+	)
+	INSERT #agent_parameter
+	VALUES(3,'-BcpBatchSize','2147473647')
+	,(3,'-CommitBatchSize','100')
+	,(3,'-CommitBatchThreshold','1000')
+	,(3,'-HistoryVerboseLevel','1')
+	,(3,'-KeepAliveMessageInterval','300')
+	,(3,'-LoginTimeout','15')
+	,(3,'-MaxBcpThreads','1')
+	,(3,'-MaxDeliveredTransactions','0')
+	,(3,'-PollingInterval','5')
+	,(3,'-QueryTimeout','1800')
+	,(3,'-SkipErrors','')
+	,(3,'-TransactionsPerHistory','100')
+	,(2,'-HistoryVerboseLevel','1')
+	,(2,'-LoginTimeout','15')
+	,(2,'-LogScanThreshold','500000')
+	,(2,'-PollingInterval','5')
+	,(2,'-QueryTimeout','1800')
+	,(2,'-ReadBatchSize','500');
 
-INSERT	#SR_Replication
-SELECT  DISTINCT 2 [ID],
-		'You are using a ' + CASE publication_type WHEN 0 THEN 'Transactional' WHEN 1 THEN 'Snapshot' WHEN 2 THEN 'Merge' ELSE '' END + ' replication. You should turn off immediate_sync and subscriber_id, they can cause some performance isssues. On publication - ' + P.publication COLLATE DATABASE_DEFAULT + ' in publisher db - ' + P.publisher_db COLLATE DATABASE_DEFAULT  [Message],
-		'Performance isssues related to configuration',
-		'www.replicationanswers.com/TransactionalOptimisation.asp'
-FROM    [distribution]..MSpublications P
-        INNER JOIN [distribution]..MSsubscriptions S ON P.publication_id = S.publication_id
-WHERE   P.immediate_sync = 1
-        AND S.subscriber_id = -1
-ORDER BY 1
-OPTION(RECOMPILE);
+	IF OBJECT_ID('tempdb..#profiles', 'u') IS NOT NULL DROP TABLE #profiles;
+	CREATE TABLE #profiles
+		(
+		  profile_id INT ,
+		  profile_name sysname ,
+		  agent_type INT ,
+		  [type] INT ,
+		  description VARCHAR(3000) ,
+		  def_profile BIT
+		);
 
--- Errors
-IF OBJECT_ID('tempdb..#Error', 'u') IS NOT NULL DROP TABLE #Error;
---https://social.msdn.microsoft.com/Forums/sqlserver/en-US/8f14068b-73ca-4d21-84ed-4afd816e9321/msreplerrors-details-for-particular-publisherssubscriber-?forum=sqlreplication
---INSERT	#SR_Replication
-SELECT  'On ' + T.PublisherName + ' - ' + T.publisher_db + ' - ' + T.publication + ' between ' + CONVERT(VARCHAR(25),MIN(T.time),121) + ' and ' + CONVERT(VARCHAR(25),MAX(T.time),121) + ' have an error - ' + T.error_text COLLATE DATABASE_DEFAULT [Message]
-		,T.PublisherName,T.publisher_db ,T.publication ,T.error_text
-INTO	#Error
-FROM    ( SELECT    publisher.name PublisherName,
-                    MSda.publication ,
-                    MSda.publisher_db ,
-                    CONVERT(NVARCHAR(MAX),MSre.error_text)error_text ,
-					MSre.time,
-                    ROW_NUMBER() OVER ( PARTITION BY MSdh.agent_id ORDER BY MSre.time DESC) RN
-          FROM      [distribution]..MSdistribution_history MSdh
-                    INNER JOIN [distribution]..MSdistribution_agents MSda ON MSdh.agent_id = MSda.id
-                    INNER JOIN [distribution]..MSrepl_errors MSre ON MSdh.error_id = MSre.id
-                    INNER JOIN master.sys.servers publisher ON MSda.publisher_id = publisher.server_id
-                    INNER JOIN master.sys.servers subscriber ON MSda.subscriber_id = subscriber.server_id
-          WHERE     MSdh.error_id <> 0
-					AND MSre.time > DATEADD(DAY, -2, GETDATE())
+	INSERT  INTO #profiles
+			( profile_id ,
+			  profile_name ,
+			  agent_type ,
+			  [type] ,
+			  description ,
+			  def_profile
+			)
+			EXEC sp_help_agent_profile;
+	IF OBJECT_ID('tempdb..#ReplicationError', 'u') IS NOT NULL DROP TABLE #ReplicationError;
+	CREATE TABLE #ReplicationError ([Message] NVARCHAR(MAX) NULL,
+		PublisherName NVARCHAR(100) NULL,
+		publisher_db sysname NULL,
+		publication sysname NULL,
+		error_text NVARCHAR(MAX) NULL
+	
+	);
+	IF OBJECT_ID('tempdb..#ReplicationServers', 'u') IS NOT NULL DROP TABLE #ReplicationServers;
+	CREATE TABLE #ReplicationServers
+		(
+		  ID INT NOT NULL
+				 IDENTITY(1, 1) ,
+		  PublicationName VARCHAR(200) ,
+		  publisher_id INT ,
+		  PublisherDB VARCHAR(200) ,
+		  PublisherName VARCHAR(200) ,
+		  source_object VARCHAR(200) ,
+		  NumRows BIGINT
+		);
+
+	DECLARE @ReplicationID INT = 1;
+	DECLARE @ReplicationMaxID INT; 
+	DECLARE @ReplicationRows INT; 
+	DECLARE curDistributor CURSOR LOCAL FAST_FORWARD READ_ONLY FOR 
+	SELECT [name] FROM sys.databases WHERE state = 0 AND is_distributor = 1;
+
+	OPEN curDistributor
+
+	FETCH NEXT FROM curDistributor INTO @DistributorName;
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+	--############################################################################################################### 
+	--                                    CHECK DISTRIBUTION Queues 
+	--############################################################################################################### 
+	DELETE FROM #MSdistribution_status;
+	SET @cmd = N'INSERT	#MSdistribution_status
+	SELECT  article_id,agent_id,UndelivCmdsInDistDB,DelivCmdsInDistDB
+	FROM    ' + QUOTENAME(@DistributorName) + '..MSdistribution_status
+	WHERE	UndelivCmdsInDistDB > 2000;'; -- GIVE A NUMBER HERE TO DEFINE A LARGE NUMBER OF RECORDS WAITING FOR REPLICATION;
+	
+    EXEC sys.sp_executesql @cmd;
+
+	DELETE FROM #MSdistribution_agents;
+	SET @cmd = N'INSERT  #MSdistribution_agents
+	SELECT  [name],subscriber_id,id,publication,subscriber_db
+	FROM    ' + QUOTENAME(@DistributorName) + '..MSdistribution_agents;';
+	
+    EXEC sys.sp_executesql @cmd;
+	
+	DELETE FROM #MSpublications;
+	SET @cmd = N'INSERT  #MSpublications
+	SELECT  publication_id,publication,immediate_sync,publisher_id,publisher_db
+	FROM    ' + QUOTENAME(@DistributorName) + '..MSpublications;';
+	
+    EXEC sys.sp_executesql @cmd;
+
+	
+	DELETE FROM #MSarticles;
+	SET @cmd = N'INSERT	#MSarticles
+	SELECT  *
+	FROM    ' + QUOTENAME(@DistributorName) + '..MSarticles;';
+	
+    EXEC sys.sp_executesql @cmd;
+
+	INSERT #SR_Replication
+	SELECT	3 [ID],
+			'Article - ' + a.article COLLATE DATABASE_DEFAULT + '(' + agents.subscriber_db COLLATE DATABASE_DEFAULT + ') on publication ' + p.publication COLLATE DATABASE_DEFAULT + ' have ' + CONVERT(VARCHAR(1000),s.UndelivCmdsInDistDB) + ' undelivered Commands In distributionDB. on ' + CONVERT(VARCHAR(5),COUNT(1))+ ' agent(s).',
+			'Undelivered Commands In distribution' [Type],
+			CASE WHEN agents.subscriber_db = 'virtual' THEN 'https://blogs.msdn.microsoft.com/mangeshd/2009/01/27/virtual-subscription-entries-in-the-distribution-mssubscriptions-table'
+			ELSE NULL END
+	FROM    #MSdistribution_status AS s
+			INNER JOIN #MSdistribution_agents AS agents ON agents.[id] = s.agent_id
+			INNER JOIN #MSpublications AS p ON p.publication = agents.publication
+			INNER JOIN #MSarticles AS a ON a.article_id = s.article_id
+														   AND p.publication_id = a.publication_id
+			LEFT JOIN sys.servers SR ON agents.subscriber_id = SR.server_id
+	--WHERE   agents.subscriber_db <> 'virtual' -- https://blogs.msdn.microsoft.com/mangeshd/2009/01/27/virtual-subscription-entries-in-the-distribution-mssubscriptions-table/
+	GROUP BY a.article,agents.subscriber_db,p.publication,s.UndelivCmdsInDistDB
+	OPTION(RECOMPILE);
+
+	SET @cmd = N'INSERT	#SR_Replication
+	SELECT  DISTINCT 2 [ID],
+			''You are using a '' + CASE publication_type WHEN 0 THEN ''Transactional'' WHEN 1 THEN ''Snapshot'' WHEN 2 THEN ''Merge'' ELSE '''' END + '' replication. You should turn off immediate_sync and subscriber_id, they can cause some performance isssues. On publication - '' + P.publication COLLATE DATABASE_DEFAULT + '' in publisher db - '' + P.publisher_db COLLATE DATABASE_DEFAULT  [Message],
+			''Performance isssues related to configuration'',
+			''www.replicationanswers.com/TransactionalOptimisation.asp''
+	FROM    #MSpublications P
+			INNER JOIN ' + QUOTENAME(@DistributorName) + '..MSsubscriptions S ON P.publication_id = S.publication_id
+	WHERE   P.immediate_sync = 1
+			AND S.subscriber_id = -1
+	ORDER BY 1
+	OPTION(RECOMPILE);'
+	
+    EXEC sys.sp_executesql @cmd;
+	-- Errors
+	DELETE FROM #ReplicationError;
+	--https://social.msdn.microsoft.com/Forums/sqlserver/en-US/8f14068b-73ca-4d21-84ed-4afd816e9321/msreplerrors-details-for-particular-publisherssubscriber-?forum=sqlreplication
+	
+	SET @cmd = N'INSERT	#ReplicationError
+	SELECT  ''On '' + T.PublisherName + '' - '' + T.publisher_db + '' - '' + T.publication + '' between '' + CONVERT(VARCHAR(25),MIN(T.time),121) + '' and '' + CONVERT(VARCHAR(25),MAX(T.time),121) + '' have an error - '' + T.error_text COLLATE DATABASE_DEFAULT [Message]
+			,T.PublisherName
+			,T.publisher_db 
+			,T.publication 
+			,T.error_text
+	
+	FROM    ( SELECT    publisher.name PublisherName,
+						MSda.publication ,
+						MSda.publisher_db ,
+						CONVERT(NVARCHAR(MAX),MSre.error_text)error_text ,
+						MSre.time,
+						ROW_NUMBER() OVER ( PARTITION BY MSdh.agent_id ORDER BY MSre.time DESC) RN
+			  FROM      ' + QUOTENAME(@DistributorName) + '..MSdistribution_history MSdh
+						INNER JOIN #MSdistribution_agents MSda ON MSdh.agent_id = MSda.id
+						INNER JOIN ' + QUOTENAME(@DistributorName) + '..MSrepl_errors MSre ON MSdh.error_id = MSre.id
+						INNER JOIN master.sys.servers publisher ON MSda.publisher_id = publisher.server_id
+						INNER JOIN master.sys.servers subscriber ON MSda.subscriber_id = subscriber.server_id
+			  WHERE     MSdh.error_id <> 0
+						AND MSre.time > DATEADD(DAY, -2, GETDATE())
 		  
 
-        ) T
-WHERE   T.RN = 1
-GROUP BY T.PublisherName,T.publisher_db,T.publication,T.error_text
-OPTION(RECOMPILE);
-
--- Errors ignoring 
-INSERT	#SR_Replication
-SELECT  13,'On ' + T.PublisherName + ' - ' + T.publisher_db + ' - ' + T.publication + ' between ' + CONVERT(VARCHAR(25),MIN(T.time),121) + ' and ' + CONVERT(VARCHAR(25),MAX(T.time),121) + ' have an error - ' + T.error_text COLLATE DATABASE_DEFAULT [Message],'Error',NULL
-FROM    ( SELECT TOP 1000
-					publisher.name AS PublisherName ,
-					MSda.publication ,
-					MSda.publisher_db ,
-					CONVERT(NVARCHAR(MAX),MSre.error_text)error_text ,
-					MSre.time,
-                    ROW_NUMBER() OVER ( PARTITION BY MSdh.agent_id ORDER BY MSre.time DESC) RN
-			FROM    [distribution]..MSrepl_errors MSre 
-					INNER JOIN [distribution]..MSdistribution_history MSdh ON MSre.time > DATEADD(DAY,
-																		  -2, GETDATE())
-																		  AND MSdh.error_id <> 0
-																		  AND MSdh.error_id = MSre.id
-					INNER JOIN [distribution]..MSdistribution_agents MSda ON MSdh.agent_id = MSda.id
-					INNER JOIN master.sys.servers publisher ON MSda.publisher_id = publisher.server_id
-					INNER JOIN master.sys.servers subscriber ON MSda.subscriber_id = subscriber.server_id
-					INNER JOIN msdb..MSagent_profiles prof ON MSda.profile_id = prof.profile_id
-					LEFT JOIN msdb..MSagent_parameters param ON MSda.profile_id = param.profile_id
-																		  AND param.parameter_name = '-SkipErrors'
-																		  AND param.value LIKE '%' + CONVERT(VARCHAR, MSre.error_code) + '%'
-			WHERE   param.value IS NULL
-					AND MSre.time > DATEADD(DAY, -2, GETDATE())) T
-			LEFT JOIN #Error R ON R.PublisherName = T.PublisherName
-					AND R.publisher_db = T.publisher_db
-					AND R.publication = T.publication
-					AND R.error_text = T.error_text
-WHERE   T.RN = 1
-		AND R.PublisherName IS NULL
-GROUP BY T.PublisherName,T.publisher_db,T.publication,T.error_text
-OPTION(RECOMPILE);
-
-INSERT	#SR_Replication
-SELECT	13,Message,'Error',NULL
-FROM	#Error;
--- Log reader jobs without 2nd schedule
-INSERT	#SR_Replication
-SELECT  1 [ID],'Job name ' + J.name + ' is Log reader job without 2nd schedule' AS Messages,
-	   'Log reader jobs without 2nd schedule' [Type],
-	   NULL
-FROM    msdb..syscategories C
-        INNER JOIN  msdb..sysjobs J ON C.category_id = J.category_id
-        INNER JOIN msdb..sysjobschedules S ON J.job_id = S.job_id
-        LEFT JOIN msdb..sysschedules SS ON S.schedule_id = SS.schedule_id
-                                           AND freq_type = 64
-        LEFT JOIN msdb..sysschedules SSOther ON S.schedule_id = SSOther.schedule_id
-                                                AND SSOther.freq_type <> 64
-WHERE   C.name = 'REPL-LogReader' -- logreader
-		AND SSOther.schedule_id IS NULL 
-		AND SS.schedule_id IS NOT NULL
-GROUP BY J.name
-UNION ALL
--- Distribution jobs that only have start on SQL start schedule
-SELECT  4 ,'Job name ' + J.name + ' have Only 1 Schedule SQL Agent Start' AS Messages,
-	    'Distribution jobs that only have start on SQL start schedule' [Type],
-	    NULL
-FROM    msdb..syscategories C
-        INNER JOIN msdb..sysjobs J ON C.category_id = J.category_id
-        INNER JOIN msdb..sysjobschedules S ON J.job_id = S.job_id
-        LEFT JOIN msdb..sysschedules SS ON S.schedule_id = SS.schedule_id
-                                           AND freq_type = 64
-        LEFT JOIN msdb..sysschedules SSOther ON S.schedule_id = SSOther.schedule_id
-                                                AND SSOther.freq_type <> 64
-WHERE	C.name = 'REPL-Distribution' -- logreader
-		AND SSOther.schedule_id IS NULL
-        AND SS.schedule_id IS NOT NULL
-GROUP BY J.name
---ORDER BY 1
-UNION ALL
--- If more than 5 million (need to decide a number) then need to examine archiving
-SELECT  5, CONVERT(VARCHAR(10),COUNT(*)) + ' commands are in MSrepl_commands - need to examine archiving',
-'Examine archiving',
-	   'blogs.msdn.microsoft.com/chrissk/2009/12/29/how-to-resolve-when-distribution-database-is-growing-huge-25gig'
-FROM    [distribution]..MSrepl_commands
-/*
-
-			*********************************************** THINK OF MAGIC NUMBER**************************************************
-
-*/
-HAVING COUNT(*) > 70000
-
-UNION ALL
--- Check undelivered commands - again need to choose a number for threshold of alert
-SELECT  6,'There is ' + CONVERT(VARCHAR(10),SUM(UndelivCmdsInDistDB)) + ' UnReplicated Commands waiting' AS Messages,
-'Check undelivered commands - again need to choose a number for threshold of alert' [Type],
-	   NULL
-FROM    [distribution]..MSdistribution_status 
-/*
-
-			*********************************************** THINK OF MAGIC NUMBER**************************************************
-
-*/
-HAVING SUM(UndelivCmdsInDistDB) > 8000
-OPTION(RECOMPILE);
-------------------------------------------
-
-IF OBJECT_ID('tempdb..#agent_parameter', 'u') IS NOT NULL DROP TABLE #agent_parameter;
-CREATE TABLE #agent_parameter (
-agent_type	INT,
-parameter_name sysname,
-value nvarchar(255)
-)
-INSERT #agent_parameter
-VALUES(3,'-BcpBatchSize','2147473647')
-,(3,'-CommitBatchSize','100')
-,(3,'-CommitBatchThreshold','1000')
-,(3,'-HistoryVerboseLevel','1')
-,(3,'-KeepAliveMessageInterval','300')
-,(3,'-LoginTimeout','15')
-,(3,'-MaxBcpThreads','1')
-,(3,'-MaxDeliveredTransactions','0')
-,(3,'-PollingInterval','5')
-,(3,'-QueryTimeout','1800')
-,(3,'-SkipErrors','')
-,(3,'-TransactionsPerHistory','100')
-,(2,'-HistoryVerboseLevel','1')
-,(2,'-LoginTimeout','15')
-,(2,'-LogScanThreshold','500000')
-,(2,'-PollingInterval','5')
-,(2,'-QueryTimeout','1800')
-,(2,'-ReadBatchSize','500');
-
-IF OBJECT_ID('tempdb..#profiles', 'u') IS NOT NULL DROP TABLE #profiles;
-CREATE TABLE #profiles
-    (
-      profile_id INT ,
-      profile_name sysname ,
-      agent_type INT ,
-      [type] INT ,
-      description VARCHAR(3000) ,
-      def_profile BIT
-    );
-
-INSERT  INTO #profiles
-        ( profile_id ,
-          profile_name ,
-          agent_type ,
-          [type] ,
-          description ,
-          def_profile
-        )
-        EXEC sp_help_agent_profile;
+			) T
+	WHERE   T.RN = 1
+	GROUP BY T.PublisherName,T.publisher_db,T.publication,T.error_text
+	OPTION(RECOMPILE);'
 	
+    EXEC sys.sp_executesql @cmd;
+
+	-- Errors ignoring 
+	SET @cmd = N'INSERT	#SR_Replication
+	SELECT  13,''On '' + T.PublisherName + '' - '' + T.publisher_db + '' - '' + T.publication + '' between '' + CONVERT(VARCHAR(25),MIN(T.time),121) + '' and '' + CONVERT(VARCHAR(25),MAX(T.time),121) + '' have an error - '' + T.error_text COLLATE DATABASE_DEFAULT [Message],''Error'',NULL
+	FROM    ( SELECT TOP 1000
+						publisher.name AS PublisherName ,
+						MSda.publication ,
+						MSda.publisher_db ,
+						CONVERT(NVARCHAR(MAX),MSre.error_text)error_text ,
+						MSre.time,
+						ROW_NUMBER() OVER ( PARTITION BY MSdh.agent_id ORDER BY MSre.time DESC) RN
+				FROM    ' + QUOTENAME(@DistributorName) + '..MSrepl_errors MSre 
+						INNER JOIN ' + QUOTENAME(@DistributorName) + '..MSdistribution_history MSdh ON MSre.time > DATEADD(DAY,
+																			  -2, GETDATE())
+																			  AND MSdh.error_id <> 0
+																			  AND MSdh.error_id = MSre.id
+						INNER JOIN #MSdistribution_agents MSda ON MSdh.agent_id = MSda.id
+						INNER JOIN master.sys.servers publisher ON MSda.publisher_id = publisher.server_id
+						INNER JOIN master.sys.servers subscriber ON MSda.subscriber_id = subscriber.server_id
+						INNER JOIN msdb..MSagent_profiles prof ON MSda.profile_id = prof.profile_id
+						LEFT JOIN msdb..MSagent_parameters param ON MSda.profile_id = param.profile_id
+																			  AND param.parameter_name = ''-SkipErrors''
+																			  AND param.value LIKE ''%'' + CONVERT(VARCHAR, MSre.error_code) + ''%''
+				WHERE   param.value IS NULL
+						AND MSre.time > DATEADD(DAY, -2, GETDATE())) T
+				LEFT JOIN #Error R ON R.PublisherName = T.PublisherName
+						AND R.publisher_db = T.publisher_db
+						AND R.publication = T.publication
+						AND R.error_text = T.error_text
+	WHERE   T.RN = 1
+			AND R.PublisherName IS NULL
+	GROUP BY T.PublisherName,T.publisher_db,T.publication,T.error_text
+	OPTION(RECOMPILE);'
+	
+    EXEC sys.sp_executesql @cmd;
+
+	INSERT	#SR_Replication
+	SELECT	13,Message,'Error',NULL
+	FROM	#ReplicationError;
+	-- Log reader jobs without 2nd schedule
+	INSERT	#SR_Replication
+	SELECT  1 [ID],'Job name ' + J.name + ' is Log reader job without 2nd schedule' AS Messages,
+		   'Log reader jobs without 2nd schedule' [Type],
+		   NULL
+	FROM    msdb..syscategories C
+			INNER JOIN  msdb..sysjobs J ON C.category_id = J.category_id
+			INNER JOIN msdb..sysjobschedules S ON J.job_id = S.job_id
+			LEFT JOIN msdb..sysschedules SS ON S.schedule_id = SS.schedule_id
+											   AND freq_type = 64
+			LEFT JOIN msdb..sysschedules SSOther ON S.schedule_id = SSOther.schedule_id
+													AND SSOther.freq_type <> 64
+	WHERE   C.name = 'REPL-LogReader' -- logreader
+			AND SSOther.schedule_id IS NULL 
+			AND SS.schedule_id IS NOT NULL
+	GROUP BY J.name
+	UNION ALL
+	-- Distribution jobs that only have start on SQL start schedule
+	SELECT  4 ,'Job name ' + J.name + ' have Only 1 Schedule SQL Agent Start' AS Messages,
+			'Distribution jobs that only have start on SQL start schedule' [Type],
+			NULL
+	FROM    msdb..syscategories C
+			INNER JOIN msdb..sysjobs J ON C.category_id = J.category_id
+			INNER JOIN msdb..sysjobschedules S ON J.job_id = S.job_id
+			LEFT JOIN msdb..sysschedules SS ON S.schedule_id = SS.schedule_id
+											   AND freq_type = 64
+			LEFT JOIN msdb..sysschedules SSOther ON S.schedule_id = SSOther.schedule_id
+													AND SSOther.freq_type <> 64
+	WHERE	C.name = 'REPL-Distribution' -- logreader
+			AND SSOther.schedule_id IS NULL
+			AND SS.schedule_id IS NOT NULL
+	GROUP BY J.name
+	--ORDER BY 1
+	
+	SET @cmd = N'INSERT	#SR_Replication
+	-- If more than 5 million (need to decide a number) then need to examine archiving
+	SELECT  5, CONVERT(VARCHAR(10),COUNT(*)) + '' commands are in MSrepl_commands - need to examine archiving'',
+	''Examine archiving'',
+		   ''blogs.msdn.microsoft.com/chrissk/2009/12/29/how-to-resolve-when-distribution-database-is-growing-huge-25gig''
+	FROM    ' + QUOTENAME(@DistributorName) + '..MSrepl_commands
+	/*
+
+				*********************************************** THINK OF MAGIC NUMBER**************************************************
+
+	*/
+	HAVING COUNT(*) > 70000
+	UNION ALL
+	-- Check undelivered commands - again need to choose a number for threshold of alert
+	SELECT  6,''There is '' + CONVERT(VARCHAR(10),SUM(UndelivCmdsInDistDB)) + '' UnReplicated Commands waiting'' AS Messages,
+	''Check undelivered commands - again need to choose a number for threshold of alert'' [Type],
+		   NULL
+	FROM    ' + QUOTENAME(@DistributorName) + '..MSdistribution_status 
+	/*
+
+				*********************************************** THINK OF MAGIC NUMBER**************************************************
+
+	*/
+	HAVING SUM(UndelivCmdsInDistDB) > 8000
+	OPTION(RECOMPILE);'
+	
+    EXEC sys.sp_executesql @cmd;
+	--Check Publications with too many articles
+    DECLARE @TooManyArticlesInAPublication INT = 50;
+	INSERT	#SR_Replication
+    SELECT  15,'Publication ' + p.publication + ' have ' + CONVERT(VARCHAR(15),COUNT(*)) + ' articles. try to lower the number of articles per publication under ' + CONVERT(VARCHAR(10),@TooManyArticlesInAPublication) +'.','Configuration',NULL
+    FROM    #MSpublications p
+            INNER JOIN #MSarticles a ON p.publication_id = a.publication_id
+    GROUP BY p.publication
+    HAVING  COUNT(*) > @TooManyArticlesInAPublication
+    ORDER BY 2 DESC;
+	------------------------------------------
+	--Check Size of tables in a Publication
+	DELETE FROM #ReplicationServers;
+
+	INSERT  #ReplicationServers
+			( PublicationName ,
+			  publisher_id ,
+			  PublisherDB ,
+			  PublisherName ,
+			  source_object ,
+			  NumRows
+			)
+	SELECT  p.publication ,
+			p.publisher_id ,
+			p.publisher_db ,
+			SR.name ,
+			a.source_owner + '.' + a.source_object ,
+			NULL
+	FROM    #MSpublications p
+			INNER JOIN #MSarticles a ON p.publication_id = a.publication_id
+			INNER JOIN sys.servers SR ON p.publisher_id = SR.server_id;
+
+	SELECT  @ReplicationMaxID = MAX(ID),@ReplicationID = MIN(ID)
+	FROM    #ReplicationServers;
+
+	WHILE @ReplicationID <= @ReplicationMaxID
+    BEGIN
+        SELECT  @cmd = 'SELECT @ReplicationRowsOut = Rows FROM OPENQUERY([' +
+                              PublisherName +
+                              '], ''Select sum(rows) as Rows from ' +
+                              PublisherDB +
+                              '.sys.partitions where object_id = OBJECT_ID(''''' +
+                              PublisherDB + '.' + source_object + ''''')     and index_id = 1'')'
+        FROM    #ReplicationServers
+        WHERE   ID = @ReplicationID;
+
+        EXECUTE sp_executesql @cmd, N'@RowsOut BIGINT OUTPUT',
+            @ReplicationRowsOut = @ReplicationRows OUTPUT;
+
+        UPDATE  #ReplicationServers
+        SET     NumRows = @ReplicationRows
+        WHERE   ID = @ReplicationID;
+
+        SET @ReplicationID += 1;
+    END;
 
 
-IF EXISTS ( SELECT  TOP 1 1 
-            FROM    [distribution]..MSdistribution_agents D
-                    INNER JOIN #profiles P ON D.profile_id = P.profile_id
-            WHERE	P.profile_name = 'Default agent profile'
-					AND P.agent_type = 2 )
-	INSERT #SR_Replication VALUES (10,'Default Log reader agent profile is being used, maybe some configuration changes should be considered','Configuration',NULL);
-ELSE
-IF NOT EXISTS ( SELECT  TOP 1 1 
-                FROM    #profiles P
-                WHERE   P.def_profile = 1
-                        AND P.profile_name <> 'Default agent profile'
-						AND P.agent_type = 2 )-- LOG agent
-	INSERT #SR_Replication VALUES (9,'Default Log reader agent profile has not been changed, maybe some configuration changes should be considered','Configuration',NULL);
+	------------------------------------------
+	IF EXISTS ( SELECT  TOP 1 1 
+				FROM    #MSdistribution_agents D
+						INNER JOIN #profiles P ON D.profile_id = P.profile_id
+				WHERE	P.profile_name = 'Default agent profile'
+						AND P.agent_type = 2 )
+		INSERT #SR_Replication VALUES (10,'Default Log reader agent profile is being used, maybe some configuration changes should be considered','Configuration',NULL);
+	ELSE
+	IF NOT EXISTS ( SELECT  TOP 1 1 
+					FROM    #profiles P
+					WHERE   P.def_profile = 1
+							AND P.profile_name <> 'Default agent profile'
+							AND P.agent_type = 2 )-- LOG agent
+		INSERT #SR_Replication VALUES (9,'Default Log reader agent profile has not been changed, maybe some configuration changes should be considered','Configuration',NULL);
 
-IF EXISTS ( SELECT  TOP 1 1 
-            FROM    [distribution]..MSdistribution_agents D
-                    INNER JOIN #profiles P ON D.profile_id = P.profile_id
-            WHERE	P.profile_name = 'Default agent profile'
-					AND P.agent_type = 3 )
-	INSERT #SR_Replication VALUES (8,'Default distribution profile is being used, maybe some configuration changes should be considered','Configuration',NULL);
-ELSE
-IF NOT EXISTS ( SELECT  TOP 1 1 
-                FROM    #profiles P
-                WHERE   P.def_profile = 1
-                        AND P.profile_name <> 'Default agent profile'
-						AND P.agent_type = 3 )-- distrebution agent
-	INSERT #SR_Replication VALUES (7,'Default distribution profile has not been changed, maybe some configuration changes should be considered','Configuration',NULL);
+	IF EXISTS ( SELECT  TOP 1 1 
+				FROM    #MSdistribution_agents D
+						INNER JOIN #profiles P ON D.profile_id = P.profile_id
+				WHERE	P.profile_name = 'Default agent profile'
+						AND P.agent_type = 3 )
+		INSERT #SR_Replication VALUES (8,'Default distribution profile is being used, maybe some configuration changes should be considered','Configuration',NULL);
+	ELSE
+	IF NOT EXISTS ( SELECT  TOP 1 1 
+					FROM    #profiles P
+					WHERE   P.def_profile = 1
+							AND P.profile_name <> 'Default agent profile'
+							AND P.agent_type = 3 )-- distrebution agent
+		INSERT #SR_Replication VALUES (7,'Default distribution profile has not been changed, maybe some configuration changes should be considered','Configuration',NULL);
 
+
+	FETCH NEXT FROM curDistributor INTO @DistributorName
+	END
+
+	CLOSE curDistributor
+	DEALLOCATE curDistributor
 END
-
+-------------------------------------------------------------------------------------------------------- 
+--------------------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------------------- 
 --------------------------------------------------------------------------------------------------------
 CREATE TABLE #sp_Blitz (
@@ -3167,7 +3454,7 @@ WHERE	CheckID NOT IN (-1,1,2,14,6,4,55,158,155,1065,1057,1039,1036,1031,1015,101
         SET @XML = ( SELECT ( SELECT    NEWID() AS id ,
                                         @Client Client,
 										GETDATE() AS date ,
-                                        CASE WHEN @Mask = 1 THEN CONVERT(sysname,'SQLServerMask') ELSE @@ServerName END AS ServerName,
+                                        CASE WHEN @Mask = 1 THEN CONVERT(sysname,'SQLServerMask') ELSE @@SERVERNAME END AS ServerName,
 										@ClientVersion [ClientVersion]
                                 FROM      ( SELECT    1 AS col1
                                         ) AS Data
@@ -3254,16 +3541,19 @@ WHERE	CheckID NOT IN (-1,1,2,14,6,4,55,158,155,1065,1057,1039,1036,1031,1015,101
 		END
 
 		INSERT master.dbo.SiteReview ( Col ) SELECT  @XML;
-		IF @Display = 1 SELECT TOP 1 Col FROM master.dbo.SiteReview;
+		IF @Display = 1 
+		BEGIN
+		    SELECT TOP 1 Col FROM master.dbo.SiteReview;
+		END
 		ELSE
-			BEGIN
+		BEGIN
 			 SELECT  @Filename = @LogPath + 'SiteReview_' + CONVERT(VARCHAR(25),YEAR(GETDATE()))+CONVERT(VARCHAR(25),MONTH(GETDATE()))+CONVERT(VARCHAR(25),DAY(GETDATE())) + '_' + CONVERT(VARCHAR(25),DATEPART(MINUTE,GETDATE()))++CONVERT(VARCHAR(25),DATEPART(SECOND,GETDATE())) + '.xml'
 			 /* we then insert a row into the table from the XML variable */
 			 /* so we can then write it out via BCP! */
-			 SELECT  @Command = 'bcp "select Col from master.dbo.SiteReview" queryout ' + @Filename + ' -w -T -S' + @@ServerName;
+			 SELECT  @Command = 'bcp "select Col from master.dbo.SiteReview" queryout ' + @Filename + ' -w -T -S' + @@SERVERNAME;
 			 INSERT @output
 			 EXECUTE master..xp_cmdshell @Command;
-		 END
+	    END
 		DROP TABLE #SR_Software;
         DROP TABLE #SR_Configuration;
         DROP TABLE #SR_Databases;
@@ -3304,31 +3594,38 @@ WHERE	CheckID NOT IN (-1,1,2,14,6,4,55,158,155,1065,1057,1039,1036,1031,1015,101
 
                 
         IF @debug = 1
-            PRINT @@ServerName + ' Failed Generating Report';
+            PRINT @@SERVERNAME + ' Failed Generating Report';
 		--IF @debug = 1 PRINT @Error;
 		--RETURN -1;
     END CATCH;
     IF @debug = 1
-        PRINT @@ServerName + ' Finished Generating Report';
+        PRINT @@SERVERNAME + ' Finished Generating Report';
 --------------------------------------------------------------------------------------------------------
 
-    IF @cmdshell = 0
-        BEGIN
-			IF @debug = 1 RAISERROR ('Turn off "xp_cmdshell"',0,1) WITH NOWAIT;
-            EXEC sp_configure 'xp_cmdshell', 0;
-            RECONFIGURE WITH OVERRIDE;
-        END;
+    IF @cmdshell = 1
+    BEGIN
+		IF @debug = 1 RAISERROR ('Turn off "xp_cmdshell"',0,1) WITH NOWAIT;
+        EXEC sp_configure 'xp_cmdshell', 0;
+        RECONFIGURE WITH OVERRIDE;
+    END;
 
-    IF @showadvanced = 0
-        BEGIN
-			IF @debug = 1 RAISERROR ('Turn off "show advanced options"',0,1) WITH NOWAIT;
-            EXEC sp_configure 'show advanced options', 0;
-            RECONFIGURE WITH OVERRIDE;
-        END;
+	IF @olea = 1
+    BEGIN
+		IF @debug = 1 RAISERROR ('Turn off "Ole Automation Procedures"',0,1) WITH NOWAIT;
+        EXEC sp_configure 'Ole Automation Procedures', 0;
+        RECONFIGURE WITH OVERRIDE;
+    END;
+
+    IF @showadvanced = 1
+    BEGIN
+		IF @debug = 1 RAISERROR ('Turn off "show advanced options"',0,1) WITH NOWAIT;
+        EXEC sp_configure 'show advanced options', 0;
+        RECONFIGURE WITH OVERRIDE;
+    END;
 
 	IF @Display = 0
 	BEGIN
-	    SET @Print = @Print + 'Go tack your file from here - "' + @Filename + '"';
+	    SET @Print = ISNULL(@Print,'') + 'Go tack your file from here - "' + @Filename + '"';
 	END
 	PRINT @Print;
-END;
+END
