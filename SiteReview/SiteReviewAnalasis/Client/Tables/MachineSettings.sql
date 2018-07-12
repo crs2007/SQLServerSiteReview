@@ -19,8 +19,13 @@
     [InstantInitializationDisabled] BIT              NULL,
     [LockPagesInMemoryDisabled]     BIT              NULL,
     [MaxClockSpeed]                 INT              NULL,
-    [CurrentClockSpeed]             INT              NULL
+    [CurrentClockSpeed]             INT              NULL,
+    [LicenseType]                   AS               ([Utility].[ufn_GetSQLServerLicenseType]([Version])),
+    [MajorVersion]                  AS               ([Utility].[ufn_GetSQLServerMajorVersion]([Version])),
+    [PhysicalMemoryGB]              AS               (CONVERT([int],round(TRY_CAST(left([PhysicalMemory],charindex(' ',[PhysicalMemory])) AS [int])/(1024.0),(0)))) PERSISTED
 ) TEXTIMAGE_ON [Client];
+
+
 
 
 GO

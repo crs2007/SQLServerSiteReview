@@ -9,3 +9,9 @@ RETURNS
 AS
  EXTERNAL NAME [SqlServerSlackAPI].[UserDefinedFunctions].[SlackChatPostMessage]
 
+
+
+
+
+
+

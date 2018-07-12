@@ -2,8 +2,11 @@
     [guid]          UNIQUEIDENTIFIER NOT NULL,
     [Name]          [sysname]        NOT NULL,
     [Algoritm]      [sysname]        NOT NULL,
-    [ClearPassword] NVARCHAR (128)   NOT NULL
-);
+    [ClearPassword] NVARCHAR (128)   NOT NULL,
+    [password_hash] VARBINARY (MAX)  NULL
+) TEXTIMAGE_ON [Client];
+
+
 
 
 GO

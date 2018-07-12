@@ -5,6 +5,9 @@
     [Default]      SQL_VARIANT    NOT NULL,
     [BestPractice] SQL_VARIANT    NULL,
     [BedPractice]  SQL_VARIANT    NULL,
-    [Link]         NVARCHAR (MAX) NULL
+    [Link]         NVARCHAR (MAX) NULL,
+    [Note]         NVARCHAR (MAX) NULL
 ) ON [Configuration] TEXTIMAGE_ON [Configuration];
+
+
 
