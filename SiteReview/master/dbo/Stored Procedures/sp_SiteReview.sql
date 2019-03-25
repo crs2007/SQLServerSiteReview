@@ -1,7 +1,6 @@
 /*
 =============================================
 Author:             Sharon Rimer
-M@il:               Sharon.Rimer@888holdings.com
 Create date:        1/1/2016
 Description: 		https://github.com/NayaTechnologies/SQLServerSiteReview
 Input Parameters:	
