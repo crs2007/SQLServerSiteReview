@@ -1,4 +1,4 @@
-﻿-- =============================================
+-- =============================================
 -- Author:		Sharon
 -- Create date: 11/06/2016
 -- Description:	<Description,,>
@@ -85,14 +85,19 @@ BEGIN
 --https://blogs.msdn.microsoft.com/sqlsakthi/p/maxdop-calculator-sqlserver/
 
 
-DECLARE @Ver NVARCHAR(128)
+	DECLARE @Ver NVARCHAR(128)
+	DECLARE @Year VARCHAR(10) = '2017';
 	SELECT	TOP 1 @PhysicalMemory = CONVERT(INT,ROUND(TRY_CONVERT(BIGINT,LEFT(ISNULL(PhysicalMemory, ''),
                              CHARINDEX(' ', PhysicalMemory) - 1)),0)),
 			@Ver = LEFT(PARSENAME(CONVERT(VARCHAR(32), ISNULL(ProductVersion,Utility.ufn_Util_clr_RegexReplace(Version,'([\W\w]*)\- ([\d]+\.[\d]+\.[\d]+\.[\d]+)[\W\w]*','$2',0))), 4)
  + PARSENAME(CONVERT(VARCHAR(32), ISNULL(ProductVersion,Utility.ufn_Util_clr_RegexReplace(Version,'([\W\w]*)\- ([\d]+\.[\d]+\.[\d]+\.[\d]+)[\W\w]*','$2',0))), 3),3)
 	FROM	[Client].[MachineSettings]
     WHERE     guid = @guid;
-	
+
+	SELECT	TOP (1) @Year = CONVERT(VARCHAR(10),[Year])
+	FROM	Configuration.SQLServerMajorBuild
+	WHERE	FullMajor = TRY_CONVERT(INT,@Ver);
+
 	SELECT @PhysicalMemory = CASE 
 	WHEN @PhysicalMemory <= 8000 THEN 6000
 	ELSE @PhysicalMemory * 0.9 END
@@ -165,7 +170,7 @@ DECLARE @Ver NVARCHAR(128)
             0 [Default] ,
             @MaxDOP BestPractice,
             cSP.[value],
-			ISNULL(ca.Link,'https://support.microsoft.com/en-us/kb/2806535')[Link],
+			ISNULL(ca.Link,'https://docs.microsoft.com/he-il/sql/database-engine/configure-windows/configure-the-max-degree-of-parallelism-server-configuration-option?view=sql-server-' + @Year)[Link],
 			'Blue'[Color],
 			'Change to this configuration will clear the cache' Note
     FROM    [Client].[spconfigure] cSP
@@ -173,6 +178,7 @@ DECLARE @Ver NVARCHAR(128)
 	WHERE   cSP.guid = @guid
 			AND cSP.name = 'max degree of parallelism'
 			AND @MaxDOP != cSP.value
+			AND (@logicalCPUs > 8 OR cSP.value != 0)
 	UNION ALL 
 	SELECT  cSP.name [name] ,
             cSP.[value] value ,
