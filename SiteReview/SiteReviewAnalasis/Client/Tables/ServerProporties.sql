@@ -23,7 +23,15 @@
     [OS_Mem]                         FLOAT (53)       NULL,
     [PLE]                            INT              NULL,
     [PhysicalMemory]                 BIGINT           NULL,
-    [OSName]                         NVARCHAR (1000)  NULL
+    [OSName]                         NVARCHAR (1000)  NULL,
+    [softnuma_configuration]         INT              NULL,
+    [softnuma_configuration_desc]    NVARCHAR (60)    NULL,
+    [sql_memory_model]               INT              NULL,
+    [sql_memory_model_desc]          NVARCHAR (120)   NULL,
+    [socket_count]                   INT              NULL,
+    [cores_per_socket]               INT              NULL,
+    [numa_node_count]                INT              NULL,
+    [IsLinux]                        BIT              NULL
 );
 
 
