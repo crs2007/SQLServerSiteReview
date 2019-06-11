@@ -60,14 +60,37 @@ BEGIN
 			)OA
 	WHERE	D.guid = @guid;
 
+	;WITH CurrentServer AS (
+		SELECT	[Name],
+				[sid]
+		FROM	Client.Logins
+		WHERE	Guid = @guid
+	), SecRep AS (
+		SELECT	L.[Name],
+				L.[sid]
+		FROM	Client.HADRReplicas H
+				CROSS APPLY (SELECT TOP (1) RM.ReportGUID FROM [Client].[ReportMetaData] RM WHERE RM.ServerName = H.ReplicaServerName ORDER BY RM.RunDate DESC) SecRep
+				INNER JOIN Client.Logins L ON L.[guid] = SecRep.ReportGUID
+		WHERE	H.[Guid] = @guid
+	)
+	SELECT	'Login' [Type],
+			'master' [DatabaseName],
+			i.img [Image],
+			CONCAT('Login "',C.[Name],'" on secondary replica(HADR) have diffarent sid') [Note],
+			1  database_id
+	FROM	CurrentServer C
+			INNER JOIN SecRep SR ON SR.[Name] = C.[Name]
+			INNER JOIN #Img i ON i.database_id = 1
+	WHERE	C.[sid] != SR.[sid]
+	UNION ALL 
 	SELECT	DISTINCT [Utility].[ufn_CapitalizeFirstLetter](DP.Type) [Type] ,
-			DP.DatabaseName ,
+			D.name ,
 			i.img [Image],
 			DP.Note,
 			D.database_id
 	FROM	Client.DatabaseProperties DP
 			INNER JOIN Client.Databases D ON D.guid = DP.guid
-				AND D.name = DP.DatabaseName
+				AND D.name = REPLACE(REPLACE(DP.DatabaseName,']',''),'[','')
 			INNER JOIN #Img i ON i.database_id = D.database_id
 	WHERE	DP.guid = @guid
 			AND DP.[Type] NOT IN (SELECT [Type] FROM @Ignore)
@@ -131,7 +154,7 @@ BEGIN
 	HAVING	SUM(DF.Total_Size) > 2000
 	UNION ALL 
 	SELECT	'Database File',DF.Database_Name,
-			im.img [Image],CONCAT('Data file is locate with ', Utility.ufn_Util_clr_Conc(i.File_Type) , ' file. Please choose diffrent drive for etch file type.'),
+			im.img [Image],CONCAT('Data file is locate with ', Utility.ufn_Util_clr_Conc(i.File_Type) , ' file. Please choose diffrent drive for each file type.'),
 			DF.database_id
 	FROM	Client.DatabaseFiles DF
 			CROSS APPLY (SELECT DISTINCT LEFT(iDF.Physical_Name,3) Volume,iDF.File_Type FROM Client.DatabaseFiles iDF WHERE iDF.guid = @guid AND iDF.file_id != 1)i
