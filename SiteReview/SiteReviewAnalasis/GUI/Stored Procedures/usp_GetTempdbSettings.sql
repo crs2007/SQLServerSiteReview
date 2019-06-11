@@ -1,4 +1,4 @@
-﻿-- =============================================
+-- =============================================
 -- Author:		Sharon
 -- Create date: 2016
 -- Update date: 2016/06/08 Sharon
@@ -6,7 +6,7 @@
 --				2017/05/17 Sharon Add @PathDevide for linux support.
 -- Description:	
 -- =============================================
-CREATE PROCEDURE [GUI].[usp_GetTempdbSettings] @guid UNIQUEIDENTIFIER
+CREATE PROCEDURE [GUI].[usp_GetTempdbSettings] @guid UNIQUEIDENTIFIER ,@Debug BIT = 0
 AS
 BEGIN
 	SET NOCOUNT ON;
@@ -48,7 +48,7 @@ BEGIN
 	FROM	(SELECT	v.number n
 	    	 FROM	master..spt_values v
 			 WHERE	v.type = 'p'
-					AND v.number <= 
+					AND v.number BETWEEN 1 AND  
 					CASE WHEN @NumberOfDataFiles >= @NumberOfCPU THEN @NumberOfDataFiles
 					WHEN @NumberOfDataFiles >= 8 THEN @NumberOfDataFiles
 					WHEN @NumberOfDataFiles <= @NumberOfCPU AND @NumberOfCPU <= 4 THEN @NumberOfCPU
@@ -74,14 +74,27 @@ BEGIN
 					WHEN RDF.Database_Name IS NULL THEN 2 
 					ELSE CASE WHEN RDF.Total_Size = S.Total_Size THEN 1 ELSE 3 END
 					END [ImageID])I
-			CROSS APPLY(select top 1 
-			CASE WHEN RDF.Database_Name IS NOT NULL THEN @FilePath ELSE 
-			LEFT(@FilePath,LEN(@FilePath) - charindex(@PathDevide,reverse(@FilePath),1) + 1) + REPLACE(REVERSE(LEFT(REVERSE(@FilePath),CHARINDEX(@PathDevide, REVERSE(@FilePath), 1) - 1)),'.mdf',
-									convert(varchar(3),Num.n) +'.ndf') END FileName)P
+			CROSS APPLY(SELECT	TOP 1	CASE
+					WHEN RDF.Database_Name IS NOT NULL THEN @FilePath
+					ELSE
+						LEFT(@FilePath, LEN(@FilePath) - CHARINDEX(@PathDevide, REVERSE(@FilePath), 1) + 1)
+						+ REPLACE(
+							  REVERSE(LEFT(REVERSE(@FilePath), CHARINDEX(@PathDevide, REVERSE(@FilePath), 1) - 1)),
+							  '.mdf',
+							  CONVERT(VARCHAR(3), Num.n) + '.ndf')
+				END FileName)P
 			INNER JOIN Configuration.Images Im ON Im.ID = I.ImageID
 	--WHERE	Num.n <= (select case when SP.logicalCPU > 8 then 8 else SP.logicalCPU end from Client.ServerProporties SP WHERE SP.guid = @Guid)
 
-
+	IF @Debug = 1 
+	BEGIN
+		SELECT * FROM #TempFiles;
+		SELECT	*,ROW_NUMBER() OVER (ORDER BY df.file_id) RN
+					   FROM		[Client].[DatabaseFiles] df 
+						WHERE	df.guid = @Guid
+								AND df.Database_Name = 'tempdb'
+								AND df.File_Type = 'Data';
+	END 
 	--Display
 	SELECT	TF.ID ,
             TF.Description ,
@@ -106,4 +119,3 @@ BEGIN
 	WHERE	TF.ID % 4 = 1
 	ORDER BY TF.ID ASC;
 END
-
