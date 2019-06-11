@@ -1,8 +1,9 @@
-﻿-- =============================================
+-- =============================================
 -- Author:		Sharon
 -- Create date: 2012
 -- Update date: 2016/06/08 Sharon
 --				2016/07/21 Sharon Utility.ufn_Util_clr_RegexReplace(Version,'Microsoft SQL Server [\d]+ \- ([\d]+\.[\d]+\.[\d]+\.[\d]+)[\W\w]*','$1',0)
+--				30/05/2019 Sharon confugured to configured 
 -- Description:	
 -- =============================================
 CREATE PROCEDURE [GUI].[usp_GetSQLSettings] @guid UNIQUEIDENTIFIER
@@ -46,21 +47,21 @@ BEGIN
 			AND R.Service = 'Error Reporting Enabled'
 			AND R.Value = '1'
 	UNION ALL 
-	SELECT	R.Service [Subject],'The number of error log files - ' + R.Value + '.' [Status],'Increase the number of <font color =Blue><HRef="https://msdn.microsoft.com/en-us/library/ms177285.aspx"><U>error log</U></A></font> to 30. Than add Job to cycle the error log etch day.'[Reco],'Black' [Color],NULL [Link]
+	SELECT	R.Service [Subject],'The number of the error log files - ' + R.Value + '.' [Status],'Increase the number of <font color =Blue><HRef="https://msdn.microsoft.com/en-us/library/ms177285.aspx"><U>error log</U></A></font> to 30. Than add Job to cycle the error log each day.'[Reco],'Black' [Color],NULL [Link]
 	FROM	Client.Registery R
 	WHERE	R.guid = @guid
 			AND R.CurrentInstance = 1
-			AND R.Service = 'Number Error Logs'
+			AND R.Service = 'SQL Server Number of Error Log files'
 			AND R.Value = '6'
 	UNION ALL 
-	SELECT	'Number Error Logs' [Subject],'The number of error log files - 6.' [Status],'Increase the number of <font color =Blue><HRef="https://msdn.microsoft.com/en-us/library/ms177285.aspx"><U>error log</U></A></font> to 30. Than add Job to cycle the error log etch day.'[Reco],'Black' [Color],NULL [Link]
+	SELECT	'Number Error Logs' [Subject],'The number of the error log files - 6.' [Status],'Increase the number of <font color =Blue><HRef="https://msdn.microsoft.com/en-us/library/ms177285.aspx"><U>error log</U></A></font> to 30. Than add Job to cycle the error log each day.'[Reco],'Black' [Color],NULL [Link]
 	WHERE	NOT EXISTS (SELECT TOP 1 1 
 		FROM	Client.Registery R
 		WHERE	R.guid = @guid
 				AND R.CurrentInstance = 1
-				AND R.Service = 'Number Error Logs')
+				AND R.Service = 'SQL Server Number of Error Log files')
 	UNION ALL 
-	SELECT	'Service startup type'[Subject],'Startup type of service - ' + SS.ServiceName + ' is confugured to - <B>' + SS.StartupTypeDesc + '</B>.'  [Status],'Change startup type of service to "<B>Automatic</B>".'[Reco],'Black' [Color],NULL [Link]
+	SELECT	'Service startup type'[Subject],'Startup type of service - ' + SS.ServiceName + ' is configured to - <B>' + SS.StartupTypeDesc + '</B>.'  [Status],'Change startup type of service to "<B>Automatic</B>".'[Reco],'Black' [Color],NULL [Link]
 	FROM	Client.ServerServices SS
 	WHERE	SS.Guid = @guid
 			AND SS.StartupType != 2 --Auto
@@ -134,6 +135,7 @@ END,IIF(STF.Software != '' ,'-<strong> ' + STF.Software + ' Best Practices</stro
 			AND OS.guid = @guid
 	HAVING AVG(pending_disk_io_count) > 10
 	UNION ALL 
+	--TODO::{https://blogs.msdn.microsoft.com/bobsql/2019/02/10/sql-server-worker-thread-default-calculation}
 	SELECT	'CPU','Max worker threads:' + CONVERT(VARCHAR(10), SP.max_workers_count),'Max worker threads shuold be 0 or Total available logical CPU’s <= 4 : 512 On 64bit system','Black' [Color],NULL [Link]
 	FROM	Client.ServerProporties SP
 	WHERE	SP.guid = @guid
