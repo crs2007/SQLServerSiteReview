@@ -1,4 +1,4 @@
-﻿-- =============================================
+-- =============================================
 -- Author:		Sharon
 -- Create date: 09/06/2016
 -- Update date: 
@@ -34,7 +34,7 @@ BEGIN
 			AND CONVERT(INT,PARSENAME(CONVERT(VARCHAR(32), @Ver), 3)) = CONVERT(INT,SSB.Minor)
 			AND SSB.[FriendlyVersion] > @Ver
 			AND [ShortName] = 'SP'
-	ORDER BY SSB.[FriendlyVersion] DESC;
+	ORDER BY SSB.MoreFriendlyVersion DESC;
 	IF @Debug = 1
 	BEGIN
 		SET @Print = CONCAT('@SPBuild:',@SPBuild);
@@ -52,9 +52,9 @@ BEGIN
 			ELSE NULL END [ShortName])Short
 	WHERE	PARSENAME(CONVERT(VARCHAR(32), ISNULL(@SPBuild,@Ver)), 4) = SSB.Major
 			AND CONVERT(INT,PARSENAME(CONVERT(VARCHAR(32), ISNULL(@SPBuild,@Ver)), 3)) = CONVERT(INT,SSB.Minor)
-			AND SSB.Build > ISNULL(@SPBuild,@Ver)
+			AND SSB.Build >= ISNULL(@SPBuild,@Ver)
 			AND [ShortName] = 'CU'
-	ORDER BY SSB.Build DESC;
+	ORDER BY SSB.MoreFriendlyVersion DESC;
 	
 	IF @Debug = 1
 	BEGIN
@@ -86,7 +86,7 @@ BEGIN
 			AND ISNULL(@SPBuild,T.[FriendlyVersion]) <= SSB.[FriendlyVersion]
 			AND SSB.Build NOT IN ('11.00.9120','11.00.9000')
 	UNION ALL --CU
-	SELECT	TOP 1 SSB.[FriendlyVersion],SSB.Description,SSB.ReleaseDate,[ShortName]
+	SELECT	SSB.[FriendlyVersion],SSB.Description,SSB.ReleaseDate,[ShortName]
 	FROM	Configuration.SQLServerBuild SSB
 			CROSS APPLY(SELECT CASE WHEN ssb.Description LIKE '%Cumulative update%' THEN 'CU'
 			WHEN ssb.Description LIKE '%security update%' THEN 'SU'			
@@ -96,7 +96,9 @@ BEGIN
 			WHEN ssb.Description LIKE '%RTM%' THEN 'RTM'
 			WHEN ssb.Description LIKE '%CTP%' THEN 'CTP'
 			ELSE NULL END [ShortName])Short
-	WHERE	SSB.[FriendlyVersion] = @CUBuild
+	WHERE	SSB.MoreFriendlyVersion >= @CUBuild
+			AND PARSENAME(CONVERT(VARCHAR(32), ISNULL(@SPBuild,@Ver)), 4) = SSB.Major
+			AND CONVERT(INT,PARSENAME(CONVERT(VARCHAR(32), ISNULL(@SPBuild,@Ver)), 3)) = CONVERT(INT,SSB.Minor)
 	UNION ALL--SP
 	SELECT	TOP 1 SSB.[FriendlyVersion] [Build],SSB.Description,SSB.ReleaseDate,[ShortName]
 	FROM	Configuration.SQLServerBuild SSB
@@ -112,4 +114,4 @@ BEGIN
 	ORDER BY SSB.[FriendlyVersion] DESC;
 
 END
-
+GO
