@@ -1,15 +1,22 @@
+IF OBJECT_ID('dbo.sp_SiteReview') IS NULL
+BEGIN
+	EXEC ('CREATE PROCEDURE dbo.sp_SiteReview AS');
+END
+GO
 /*
 =============================================
 Author:             Sharon Rimer
+M@il:               Sharon.Rimer@888holdings.com
 Create date:        1/1/2016
 Description: 		https://github.com/NayaTechnologies/SQLServerSiteReview
+			https://github.com/crs2007/SQLServerSiteReview
 Input Parameters:	
 			@Client                                  : Haeder Name for your report.
-			@Allow_Weak_Password_Check				 : If checked password will collect to find Weak passwords.
+			@Allow_Weak_Password_Check		 : If checked password will collect to find Weak passwords.
 			@debug                                   : Show proccess output messages on screen.
 			@Display                                 : To show output into screen.
 			@Mask                                    : Will scramble IP and Server name before sending.
-			@IgnoreLongRuning						 : Will ignore long run querys
+			@IgnoreLongRuning			 : Will ignore long run querys
 ============================================================================
 DISCLAIMER: 
        This code and information are provided "AS IS" without warranty of any kind,
@@ -23,12 +30,22 @@ LICENSE:
        prohibited without the author's express written consent.
 ============================================================================
 Execute:
-       EXEC [dbo].[sp_SiteReview] N'General Client',1,0,1,0,1,0;
+DECLARE @OutputFilePath VARCHAR(1000);
+       EXEC [dbo].[sp_SiteReview] N'General Client',1,0,1,0,1,0,@OutputFilePath OUT;
+
 ============================================================================
 TODO:
 	Find missing index per heavy query
 ============================================================================*/
-ALTER PROCEDURE [dbo].[sp_SiteReview] ( @Client NVARCHAR(255) = N'General Client',@Allow_Weak_Password_Check BIT = 0,@debug BIT = 0,@Display BIT = 0,@Mask BIT = 1,@IgnoreLongRuning BIT = 1,@Help BIT = 0)
+ALTER PROCEDURE [dbo].[sp_SiteReview] ( 
+	@Client				NVARCHAR(255) = N'General Client',
+	@Allow_Weak_Password_Check 	BIT = 0,
+	@debug				BIT = 0,
+	@Display			BIT = 0,
+	@Mask				BIT = 1,
+	@IgnoreLongRuning		BIT = 1,
+	@Help				BIT = 0,
+	@OutputFilePath			VARCHAR(1000) OUTPUT)
 AS
 BEGIN
        SET NOCOUNT ON;
@@ -39,10 +56,11 @@ BEGIN
        SET ARITHABORT ON;
        SET QUOTED_IDENTIFIER ON;
        SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
        DECLARE @ClientVersion NVARCHAR(15);
        DECLARE @ThankYou NVARCHAR(4000);
        DECLARE @Print NVARCHAR(4000);
-       SET @ClientVersion = '1.516';
+       SET @ClientVersion = '1.519';
        SET @ThankYou = 'Thank you for using our SQL Server Site Review tool.
 --------------------------------------------------------------------------------
 Find out more in our site - www.NAYA-Technologies.co.il
@@ -205,6 +223,15 @@ TRUNCATE TABLE #VLFInfo;';
        END CATCH
 -------------------------------------------------------------------------------------------------------------------
 
+        IF OBJECT_ID('tempdb..#SR_Volume') IS NOT NULL
+            DROP TABLE #SR_Volume;
+		
+		CREATE TABLE #SR_Volume(volume_mount_point INT,
+          available_bytes FLOAT,
+          total_bytes FLOAT,
+          DriveLeter CHAR(3),
+          BlockSize VARCHAR(1000),
+          VolumeName CHAR(3));
 -------------------------------------------------------------------------------------------------------------------
 /*
 BizTalk:https://blogs.msdn.microsoft.com/blogdoezequiel/2009/01/25/sql-best-practices-for-biztalk/
@@ -2358,27 +2385,25 @@ OPTION(RECOMPILE);');
 ----------------------------------------------
        BEGIN TRY
 		SET @DebugStartTime = GETDATE();
-        IF OBJECT_ID('tempdb..#SR_Volume') IS NOT NULL
-            DROP TABLE #SR_Volume;
-              IF OBJECT_ID('tempdb..#VolumDiskInfo') IS NULL
-              CREATE TABLE #VolumDiskInfo
-              (
-                volume_mount_point CHAR(3) ,
-                [available_bytes] BIGINT ,
-                [total_bytes] BIGINT)
-              IF SERVERPROPERTY('productversion') > '10.50.2500.0'
-              BEGIN
-                     INSERT #VolumDiskInfo
-                     SELECT  vs.volume_mount_point ,
-                            MIN(CAST(vs.available_bytes AS FLOAT)) available_bytes ,
-                            MAX(CAST(vs.total_bytes AS FLOAT)) total_bytes
-                     FROM    sys.master_files AS f 
-                            CROSS APPLY sys.dm_os_volume_stats(f.database_id, f.file_id) AS vs
-                     GROUP BY vs.volume_mount_point
-                     OPTION(RECOMPILE);
-              END
-              ELSE
-              BEGIN
+        IF OBJECT_ID('tempdb..#VolumDiskInfo') IS NULL
+        CREATE TABLE #VolumDiskInfo
+        (
+          volume_mount_point NVARCHAR(256) ,
+          [available_bytes] BIGINT ,
+          [total_bytes] BIGINT)
+        IF SERVERPROPERTY('productversion') > '10.50.2500.0'
+        BEGIN
+               INSERT #VolumDiskInfo
+               SELECT  vs.volume_mount_point ,
+                      MIN(CAST(vs.available_bytes AS FLOAT)) available_bytes ,
+                      MAX(CAST(vs.total_bytes AS FLOAT)) total_bytes
+               FROM    sys.master_files AS f 
+                      CROSS APPLY sys.dm_os_volume_stats(f.database_id, f.file_id) AS vs
+               GROUP BY vs.volume_mount_point
+               OPTION(RECOMPILE);
+        END
+        ELSE
+        BEGIN
 /*https://msdn.microsoft.com/en-us/library/hh223223(v=sql.105).aspx
 sys.dm_os_volume_stats - Returns information about the operating system volume (directory) on which the specified databases and files are stored. Use this dynamic management function in SQL Server 2008 R2 SP1 and later versions to check the attributes of the physical disk drive or return available free space information about the directory.   */
                 IF EXISTS( SELECT TOP (1) 1 FROM sys.configurations WHERE [name] LIKE 'Ole Automation Procedures' AND value_in_use = 0 ) 
@@ -2442,13 +2467,13 @@ sys.dm_os_volume_stats - Returns information about the operating system volume (
                 DROP TABLE #_DriveSpace;
                 DROP TABLE #_DriveInfo;
         END
+		INSERT	#SR_Volume
         SELECT  vs.volume_mount_point ,
-                           MIN(CAST(vs.available_bytes AS FLOAT)) available_bytes ,
-                           MAX(CAST(vs.total_bytes AS FLOAT)) total_bytes,
+                MIN(CAST(vs.available_bytes AS FLOAT)) available_bytes ,
+                MAX(CAST(vs.total_bytes AS FLOAT)) total_bytes,
                 BS.DriveLeter ,
                 BS.BlockSize,
-                           VN.VolumeName
-        INTO    #SR_Volume
+                VN.VolumeName
         FROM    (SELECT    DISTINCT LEFT(physical_name,3)physical_name
                 FROM sys.master_files) AS f
                 CROSS APPLY (SELECT TOP 1 * FROM #VolumDiskInfo VDI WHERE f.physical_name = VDI.volume_mount_point) AS vs
@@ -4050,7 +4075,7 @@ WHERE  CheckID NOT IN (-1,1,2,14,6,4,55,158,155,1065,1057,1039,1036,1031,1015,10
               BEGIN
 					IF @IsLinux = 0
 					BEGIN
-						SELECT  @Filename = @LogPath + 'SiteReview_' + CONVERT(VARCHAR(25),YEAR(GETDATE()))+CONVERT(VARCHAR(25),MONTH(GETDATE()))+CONVERT(VARCHAR(25),DAY(GETDATE())) + '_' + CONVERT(VARCHAR(25),DATEPART(MINUTE,GETDATE()))++CONVERT(VARCHAR(25),DATEPART(SECOND,GETDATE())) + '.xml'
+						SELECT  @Filename = @LogPath + 'SiteReview_' + REPLACE(@@SERVERNAME,'\','@') + '_'+ CONVERT(VARCHAR(25),YEAR(GETDATE()))+CONVERT(VARCHAR(25),MONTH(GETDATE()))+CONVERT(VARCHAR(25),DAY(GETDATE())) + '_' + CONVERT(VARCHAR(25),DATEPART(MINUTE,GETDATE()))++CONVERT(VARCHAR(25),DATEPART(SECOND,GETDATE())) + '.xml'
 						/* we then insert a row into the table from the XML variable */
 						/* so we can then write it out via BCP! */
 						SELECT  @Command = 'bcp "select Col from master.dbo.SiteReview" queryout ' + @Filename + ' -w -T -S' + @@SERVERNAME;
@@ -4065,20 +4090,20 @@ WHERE  CheckID NOT IN (-1,1,2,14,6,4,55,158,155,1065,1057,1039,1036,1031,1015,10
 					END
            END
 		DROP TABLE #SR_Software;
-        DROP TABLE #SR_Configuration;
-        DROP TABLE #SR_Databases;
-        DROP TABLE #SR_Jobs;
-        DROP TABLE #SR_Latency;
-        DROP TABLE #SR_login;
-        DROP TABLE #SR_MasterFiles;
-        DROP TABLE #SR_os_schedulers;
-        DROP TABLE #SR_PLE;
-        DROP TABLE #SR_servers;
-        DROP TABLE #SR_server_services;
-        DROP TABLE #SR_TraceStatus; 
-        DROP TABLE #SR_Volume;
-        DROP TABLE #SR_ServerProporties;
-        DROP TABLE #SR_MachineSettings;
+        	DROP TABLE #SR_Configuration;
+        	DROP TABLE #SR_Databases;
+        	DROP TABLE #SR_Jobs;
+        	DROP TABLE #SR_Latency;
+        	DROP TABLE #SR_login;
+        	DROP TABLE #SR_MasterFiles;
+        	DROP TABLE #SR_os_schedulers;
+        	DROP TABLE #SR_PLE;
+        	DROP TABLE #SR_servers;
+        	DROP TABLE #SR_server_services;
+        	DROP TABLE #SR_TraceStatus; 
+        	DROP TABLE #SR_Volume;
+        	DROP TABLE #SR_ServerProporties;
+        	DROP TABLE #SR_MachineSettings;
 		DROP TABLE #SR_Offset;
 		DROP TABLE #SR_reg;
 		DROP TABLE #SR_KB;
@@ -4125,11 +4150,12 @@ GTError:
         EXEC sp_configure 'show advanced options', 0;
         RECONFIGURE WITH OVERRIDE;
     END;
-       IF @Display = 0
-       BEGIN
-           SET @Print = ISNULL(@Print,'') + 'Go tack your file from here - "' + @Filename + '"';
-       END
-       PRINT @Print;
-       IF @ErrorLog IS NOT NULL
-              RAISERROR(@ErrorLog,16,1);
+	SET @OutputFilePath = @Filename;	
+	IF @Display = 0
+	BEGIN
+	    SET @Print = ISNULL(@Print,'') + 'Go tack your file from here - "' + @Filename + '"';
+	END
+	PRINT @Print;
+	IF @ErrorLog IS NOT NULL
+	       RAISERROR(@ErrorLog,16,1);
 END
