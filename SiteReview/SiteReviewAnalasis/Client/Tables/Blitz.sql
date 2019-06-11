@@ -3,7 +3,7 @@
     [ID]                INT              NOT NULL,
     [ServerName]        NVARCHAR (128)   NULL,
     [CheckDate]         DATETIME         NULL,
-    [BlitzVersion]      INT              NULL,
+    [BlitzVersion]      VARCHAR (10)     NULL,
     [Priority]          TINYINT          NULL,
     [FindingsGroup]     VARCHAR (50)     NULL,
     [Finding]           VARCHAR (200)    NULL,
