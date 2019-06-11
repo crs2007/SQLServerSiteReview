@@ -25,5 +25,32 @@ BEGIN
 			CROSS APPLY (SELECT Utility.ufn_Util_clr_RegexReplace(H.[Msg],'(Availability Group\- \[([\w\W]*)\][\w\W]*)','$2',0) [Msg],
 			Utility.ufn_Util_clr_RegexReplace(H.[Msg],'(Replica name \- \[([\w\W]*)\][\w\W]*)','$2',0) [Replica])M
 	WHERE	[guid] = @guid
+	UNION ALL 
+	SELECT	'master',hr.ReplicaServerName,ag_name,CONCAT('Node ',hr.ReplicaServerName,' have diffrent CPU from this server.')[Message]
+	FROM	Client.MachineSettings ms
+			CROSS APPLY (SELECT TOP (1) r.CPU,r.NumberOfLogicalProcessors,r.Cores,h.ag_name FROM [Client].RemoteServerNode r INNER JOIN [Client].[HADR] h ON h.guid = r.Guid AND h.replica_server_name = ms.ServerName WHERE r.[Guid] = @guid AND r.Server = ms.MachineName)CurrentServer
+			INNER JOIN Client.HADRReplicas hr ON hr.Guid = ms.guid
+			INNER JOIN [Client].RemoteServerNode rsn ON rsn.Guid = ms.guid 
+				AND rsn.Server = hr.ComputerNamePhysicalNetBIOS
+	WHERE	ms.[Guid] = @guid
+			AND CurrentServer.CPU != rsn.CPU
+	UNION ALL 
+	SELECT	'master',hr.ReplicaServerName,ag_name,CONCAT('Node ',hr.ReplicaServerName,' have diffrent NumberOfLogicalProcessors from this server.')[Message]
+	FROM	Client.MachineSettings ms
+			CROSS APPLY (SELECT TOP (1) r.CPU,r.NumberOfLogicalProcessors,r.Cores,h.ag_name FROM [Client].RemoteServerNode r INNER JOIN [Client].[HADR] h ON h.guid = r.Guid AND h.replica_server_name = ms.ServerName WHERE r.[Guid] = @guid AND r.Server = ms.MachineName)CurrentServer
+			INNER JOIN Client.HADRReplicas hr ON hr.Guid = ms.guid
+			INNER JOIN [Client].RemoteServerNode rsn ON rsn.Guid = ms.guid 
+				AND rsn.Server = hr.ComputerNamePhysicalNetBIOS
+	WHERE	ms.[Guid] = @guid
+			AND CurrentServer.NumberOfLogicalProcessors != rsn.NumberOfLogicalProcessors
+	UNION ALL
+	SELECT	'master',hr.ReplicaServerName,ag_name,CONCAT('Node ',hr.ReplicaServerName,' have diffrent number of Cores from this server.')[Message]
+	FROM	Client.MachineSettings ms
+			CROSS APPLY (SELECT TOP (1) r.CPU,r.NumberOfLogicalProcessors,r.Cores,h.ag_name FROM [Client].RemoteServerNode r INNER JOIN [Client].[HADR] h ON h.guid = r.Guid AND h.replica_server_name = ms.ServerName WHERE r.[Guid] = @guid AND r.Server = ms.MachineName)CurrentServer
+			INNER JOIN Client.HADRReplicas hr ON hr.Guid = ms.guid
+			INNER JOIN [Client].RemoteServerNode rsn ON rsn.Guid = ms.guid 
+				AND rsn.Server = hr.ComputerNamePhysicalNetBIOS
+	WHERE	ms.[Guid] = @guid
+			AND CurrentServer.Cores != rsn.Cores
 
 END
