@@ -1,4 +1,4 @@
-﻿-- =============================================
+-- =============================================
 -- Author:		Sharon
 -- Create date: 07/06/2016
 -- Description:	Get Excluded DB
@@ -136,14 +136,26 @@ BEGIN
 	,ParentGroup [sysname] 'ParentGroup'
 	);
 
-	--INSERT [Client].RemoteServerNode
-	--        ( guid, Software, Status )
-	--SELECT @guid [guid],Software,Status
-	--FROM OPENXML(@hDoc, 'SiteReview/RemoteServerNode/Data')--RemoteServerNode
-	--WITH 
-	--(Software  [NVARCHAR](255) 'Software'
-	--,Status BIT 'Status'
-	--);
+		;WITH cte AS (
+	SELECT [Server],RTRIM(LTRIM(Property))[Property],[Value]
+	FROM OPENXML(@hDoc, 'SiteReview/RemoteServerNode/Data')--RemoteServerNode
+	WITH 
+	([Server]  sysname 'Server',
+	 Property sysname 'Property',
+	 [Value] NVARCHAR(MAX) 'Value'
+	)), UniServer AS (
+	SELECT	DISTINCT [Server]
+	FROM	cte
+	
+	)
+	INSERT [Client].RemoteServerNode
+	        ( guid, [Server], [CPU] ,[NumberOfLogicalProcessors],[Cores])
+	SELECT	@guid [guid],[Server],cp.[Value] [CPU],LP.[Value] [NumberOfLogicalProcessors],cR.[Value] [Cores]
+	 FROM	UniServer u
+			OUTER APPLY (SELECT TOP (1) [Value] FROM cte c WHERE c.[Server] = u.[Server] AND c.[Property] = 'CPU' )cp
+			OUTER APPLY (SELECT TOP (1) [Value] FROM cte c WHERE c.[Server] = u.[Server] AND c.[Property] = 'NumberOfLogicalProcessors' )LP
+			OUTER APPLY (SELECT TOP (1) [Value] FROM cte c WHERE c.[Server] = u.[Server] AND c.[Property] = 'Cores' )cR
+	;
 
 
 	DECLARE @PLE INT;
@@ -224,18 +236,21 @@ BEGIN
 	          AlwaysOn ,
 	          [Replication] ,
 	          LogShipping ,
-	          Mirror
+	          Mirror,
+			  Cluster
 	        )
 	SELECT @guid [guid], AlwaysOn ,
                          [Replication] ,
                          LogShipping ,
-                         Mirror
+                         Mirror,
+						 Cluster
 	FROM OPENXML(@hDoc, 'SiteReview/HADRServices/Data')--HADRServices
 	WITH 
 	(	AlwaysOn BIT 'AlwaysOn',
 		[Replication] BIT 'Replication',
 		LogShipping BIT 'LogShipping',
-		Mirror BIT 'Mirror'
+		Mirror BIT 'Mirror',
+		Cluster BIT 'Cluster'
 	);
 
 	INSERT Client.DatabaseProperties
@@ -371,16 +386,35 @@ BEGIN
 	(Volume sysname 'Volume',
 	MB BIGINT 'MB'
 	);
-
-	INSERT [Client].[Logins]
-	SELECT @guid [guid],Name,Header,Salt,password_hash
-	FROM OPENXML(@hDoc, 'SiteReview/login/Data')--[Logins]
-	WITH 
-	(Name sysname 'Name',
-	 Header VARBINARY(MAX) 'Header',
-	 Salt VARBINARY(MAX) 'Salt',
-	 password_hash  VARBINARY(MAX) 'password_hash'
-	);
+	BEGIN TRY
+		INSERT [Client].[Logins]
+		SELECT @guid [guid], Name, Header, Salt,password_hash,[sid]
+		FROM OPENXML(@hDoc, 'SiteReview/login/Data')--[Logins]
+		WITH 
+		(Name sysname 'Name',
+		 Header VARBINARY(MAX) 'Header',
+		 Salt VARBINARY(MAX) 'Salt',
+		 password_hash  VARBINARY(MAX) 'password_hash',
+		 [sid]  NVARCHAR(MAX) 'sid'
+		);
+	END TRY
+	BEGIN CATCH
+		PRINT 'Error running XML parsing on [Client].[Logins]'
+	END CATCH	
+	
+	
+	BEGIN TRY
+		INSERT [Client].[HADRReplicas]
+		SELECT @guid [guid], ReplicaServerName, ComputerNamePhysicalNetBIOS
+		FROM OPENXML(@hDoc, 'SiteReview/HADRReplicas/Data')--[HADRReplicas]
+		WITH 
+		(ReplicaServerName sysname 'ReplicaServerName',
+		 [ComputerNamePhysicalNetBIOS]  sysname 'ComputerNamePhysicalNetBIOS'
+		);
+	END TRY
+	BEGIN CATCH
+		PRINT 'Error running XML parsing on [Client].[Logins]'
+	END CATCH	
 
 	INSERT [Client].Latency
 	        ( guid ,
@@ -803,14 +837,15 @@ BEGIN
 	,MaxClockSpeed INT 'MaxClockSpeed'
 	,CurrentClockSpeed INT 'CurrentClockSpeed'
 	);
-
+	
 	INSERT [Client].ServerServices
 	        ( Guid,ServiceName ,
 	          StartupTypeDesc ,
 	          StartupType ,
 	          Status ,
 	          StatusDesc ,
-	          ServiceAccount
+	          ServiceAccount,
+			  instant_file_initialization_enabled
 	        )
 
 	SELECT @guid [guid], ServiceName ,
@@ -818,7 +853,8 @@ BEGIN
                          StartupType ,
                          Status ,
                          StatusDesc ,
-                         ServiceAccount
+                         ServiceAccount,
+						 instant_file_initialization_enabled
 	FROM OPENXML(@hDoc, 'SiteReview/server_services/Data')--MachineSettings
 	WITH 
 	(	ServiceName sysname 'servicename',
@@ -826,8 +862,10 @@ BEGIN
 		StartupType INT 'startup_type',
 		Status INT 'status',
 		StatusDesc sysname 'status_desc',
-		ServiceAccount sysname 'service_account'
+		ServiceAccount sysname 'service_account',
+		instant_file_initialization_enabled BIT 'instant_file_initialization_enabled'
 	);
+
 
 
 	INSERT [Client].ServerProporties
@@ -855,7 +893,15 @@ BEGIN
 	          OS_Mem ,
 	          PLE,
 			  PhysicalMemory,
-			  OSName
+			  OSName,
+			  IsLinux,
+			  softnuma_configuration
+			,softnuma_configuration_desc
+			,sql_memory_model
+			,sql_memory_model_desc
+			,socket_count
+			,cores_per_socket
+			,numa_node_count
 	        )
 	SELECT @guid [guid],
 	          logicalCPU ,
@@ -878,7 +924,14 @@ BEGIN
 	          OS_bit ,
 	          PlatformType ,
 	          ThreadStack ,
-	          OS_Mem,@PLE,PhysicalMemory,OSName
+	          OS_Mem,@PLE,PhysicalMemory,OSName,IsLinux,
+			  softnuma_configuration
+			,softnuma_configuration_desc
+			,sql_memory_model
+			,sql_memory_model_desc
+			,socket_count
+			,cores_per_socket
+			,numa_node_count
 	FROM OPENXML(@hDoc, 'SiteReview/ServerProporties/Data')--MachineSettings
 	WITH 
 	(logicalCPU INT 'logicalCPU',
@@ -903,7 +956,15 @@ BEGIN
 	PlatformType INT 'PlatformType',
 	ThreadStack INT 'ThreadStack',
 	OS_Mem FLOAT 'OS_Mem',
-	OSName NVARCHAR(1000) 'OSName'
+	OSName NVARCHAR(1000) 'OSName',
+	IsLinux BIT 'IsLinux',
+	softnuma_configuration INT 'softnuma_configuration',
+	softnuma_configuration_desc nvarchar(60) 'softnuma_configuration_desc',
+	sql_memory_model INT 'sql_memory_model',
+	sql_memory_model_desc nvarchar(120) 'sql_memory_model_desc',
+	socket_count INT 'socket_count',
+	cores_per_socket INT 'cores_per_socket',
+	numa_node_count INT 'numa_node_count'
 	);
 
 	INSERT [Client].[Servers]
@@ -1085,7 +1146,7 @@ BEGIN
 	(ID INT 'ID',
 	ServerName sysname 'ServerName',
 	CheckDate DATETIME 'CheckDate',
-	BlitzVersion INT 'BlitzVersion',
+	BlitzVersion VARCHAR(10) 'BlitzVersion',
 	Priority INT 'Priority',
 	FindingsGroup VARCHAR(50) 'FindingsGroup',
 	Finding VARCHAR(200) 'Finding',
@@ -1144,7 +1205,3 @@ BEGIN
 
 
 END
-
-
-
-
