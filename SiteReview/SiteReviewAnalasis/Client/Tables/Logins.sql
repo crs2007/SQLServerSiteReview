@@ -3,7 +3,8 @@
     [Name]          [sysname]        NOT NULL,
     [Header]        VARBINARY (MAX)  NOT NULL,
     [Salt]          VARBINARY (MAX)  NOT NULL,
-    [password_hash] VARBINARY (MAX)  NOT NULL
+    [password_hash] VARBINARY (MAX)  NOT NULL,
+    [sid]           NVARCHAR (85)    NULL
 ) TEXTIMAGE_ON [Client];
 
 
